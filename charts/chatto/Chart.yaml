@@ -5,7 +5,7 @@ type: application
 
 # This is the chart version. It is independent of Chatto's own version and is
 # bumped on every change to the chart itself (SemVer).
-version: 0.1.1
+version: 0.1.2
 
 # The default Chatto version this chart deploys. Kept in sync with the pinned
 # image tag in values.yaml (image.tag). Bump both together.
@@ -39,6 +39,27 @@ annotations:
       url: https://docs.chatto.run
     - name: Chatto source
       url: https://github.com/chattocorp/chatto
+    - name: Chart source
+      url: https://github.com/luroden/chatto-helm
+
+  # Artifact Hub guesses a category when this is unset. "streaming-messaging"
+  # is the closest of its fixed set for a chat server on JetStream.
+  artifacthub.io/category: streaming-messaging
+
+  # Drives Artifact Hub's security report. Only the image this chart pins is
+  # listed; the nats and livekit images come from subcharts, which Artifact Hub
+  # scans separately via their own listings. Must be an explicit tag, so keep
+  # this in sync with appVersion and values.yaml image.tag.
+  artifacthub.io/images: |
+    - name: chatto
+      image: ghcr.io/chattocorp/chatto:0.4.2
+
+  # Renders as the changelog for this chart version. Reset on every version bump.
+  artifacthub.io/changes: |
+    - kind: added
+      description: Artifact Hub repository metadata and package annotations
+    - kind: fixed
+      description: Dependency repositories are registered before packaging in the release workflow
 
 dependencies:
   # NATS JetStream is Chatto's primary data store. Enabled by default so a

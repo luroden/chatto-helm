@@ -1,0 +1,16 @@
+# Artifact Hub repository metadata.
+#
+# This file is NOT part of the packaged chart. The chart is published as an OCI
+# artifact, so Artifact Hub expects this metadata as a separate artifact pushed
+# to the same OCI repository under the reserved `artifacthub.io` tag. The
+# release workflow does that; see .github/workflows/release.yaml.
+#
+# Setting repositoryID proves we control the registry namespace and is what
+# earns the "Verified Publisher" badge.
+repositoryID: 642b0c2d-9692-4b54-858d-50971ca47302
+
+# `owners` is only consulted for ownership-claim requests (transferring the
+# repository to another Artifact Hub account). It is intentionally omitted:
+# the entry must carry a plaintext email matching the claimant's Artifact Hub
+# account, and this repository is public. Add it temporarily if a claim is ever
+# needed.
