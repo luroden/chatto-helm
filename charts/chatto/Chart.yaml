@@ -5,11 +5,11 @@ type: application
 
 # This is the chart version. It is independent of Chatto's own version and is
 # bumped on every change to the chart itself (SemVer).
-version: 0.1.3
+version: 0.1.4
 
 # The default Chatto version this chart deploys. Kept in sync with the pinned
 # image tag in values.yaml (image.tag). Bump both together.
-appVersion: "0.4.2"
+appVersion: "0.4.3"
 
 home: https://chatto.run
 sources:
@@ -52,16 +52,12 @@ annotations:
   # this in sync with appVersion and values.yaml image.tag.
   artifacthub.io/images: |
     - name: chatto
-      image: ghcr.io/chattocorp/chatto:0.4.2
+      image: ghcr.io/chattocorp/chatto:0.4.3
 
   # Renders as the changelog for this chart version. Reset on every version bump.
   artifacthub.io/changes: |
-    - kind: fixed
-      description: chatto.assets.s3.pathStyle no longer crashes the server at startup; auto/virtual/path are translated to the boolean Chatto expects
-    - kind: fixed
-      description: The startup probe budget now covers a cold start, which previously killed pods while they created JetStream streams
-    - kind: added
-      description: values.schema.json validates chatto.assets.s3.pathStyle and useSSL
+    - kind: changed
+      description: Default Chatto version is now 0.4.3
 
 dependencies:
   # NATS JetStream is Chatto's primary data store. Enabled by default so a

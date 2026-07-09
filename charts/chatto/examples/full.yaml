@@ -29,7 +29,7 @@ image:
   repository: ghcr.io/chattocorp/chatto
   # Pin explicitly in production rather than inheriting the chart appVersion,
   # so a chart upgrade never moves the application version underneath you.
-  tag: "0.4.2"
+  tag: "0.4.3"
   pullPolicy: IfNotPresent
 
 chatto:
