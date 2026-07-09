@@ -38,7 +38,14 @@
         "assets": {
           "type": "object",
           "properties": {
-            "storageBackend": { "type": "string", "enum": ["nats", "s3"] }
+            "storageBackend": { "type": "string", "enum": ["nats", "s3"] },
+            "s3": {
+              "type": "object",
+              "properties": {
+                "useSSL": { "type": "boolean" },
+                "pathStyle": { "type": "string", "enum": ["auto", "virtual", "path"] }
+              }
+            }
           }
         },
         "smtp": {

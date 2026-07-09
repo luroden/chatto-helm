@@ -53,6 +53,7 @@ Service (a LoadBalancer, Ingress, or Gateway API controller).
 | `nats.config.jetstream.memoryStore.maxSize` | `256Mi` | JetStream memory store. Required — Chatto's `MEMORY_CACHE` bucket needs it. |
 | `externalNats.url` | `""` | External NATS URL(s), used when `nats.enabled=false`. |
 | `chatto.assets.storageBackend` | `nats` | `nats` or `s3`. |
+| `chatto.assets.s3.pathStyle` | `auto` | `auto`, `virtual`, or `path`. Use `path` for MinIO/Garage and other backends without per-bucket DNS. |
 | `chatto.smtp.enabled` | `false` | Email via SMTP. Required for browser registration. |
 | `chatto.operatorApi.enabled` | `false` | Root-equivalent Unix socket for `chatto operator`. The only way to create the first user without SMTP. |
 | `chatto.push.enabled` | `false` | Web Push notifications. |

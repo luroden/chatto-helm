@@ -97,7 +97,16 @@ data:
   CHATTO_CORE_ASSETS_S3_BUCKET: {{ .Values.chatto.assets.s3.bucket | quote }}
   CHATTO_CORE_ASSETS_S3_REGION: {{ .Values.chatto.assets.s3.region | quote }}
   CHATTO_CORE_ASSETS_S3_USE_SSL: {{ .Values.chatto.assets.s3.useSSL | quote }}
-  CHATTO_CORE_ASSETS_S3_PATH_STYLE: {{ .Values.chatto.assets.s3.pathStyle | quote }}
+  {{- /*
+  Chatto parses CHATTO_CORE_ASSETS_S3_PATH_STYLE as a *bool, so the only values
+  it accepts are "true", "false", and absent. Passing the value through verbatim
+  makes the server exit at startup with a strconv.ParseBool error. "auto" is the
+  nil pointer: leave the variable unset and Chatto picks virtual-hosted for AWS
+  endpoints and path-style for custom ones.
+  */}}
+  {{- if ne .Values.chatto.assets.s3.pathStyle "auto" }}
+  CHATTO_CORE_ASSETS_S3_PATH_STYLE: {{ eq .Values.chatto.assets.s3.pathStyle "path" | quote }}
+  {{- end }}
   {{- with .Values.chatto.assets.s3.pathPrefix }}
   CHATTO_CORE_ASSETS_S3_PATH_PREFIX: {{ . | quote }}
   {{- end }}
