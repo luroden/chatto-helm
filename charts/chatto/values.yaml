@@ -117,7 +117,10 @@ chatto:
       region: ""
       pathPrefix: ""
       useSSL: true
-      # -- auto | virtual | path
+      # -- S3 URL addressing: auto | virtual | path. `auto` leaves the choice to
+      # Chatto, which uses virtual-hosted addressing for AWS endpoints and
+      # path-style for custom ones. Set `path` explicitly for MinIO, Garage, or
+      # any backend without wildcard DNS for buckets.
       pathStyle: auto
       accessKeyId: ""
       secretAccessKey: ""
@@ -413,13 +416,19 @@ updateStrategy:
     maxSurge: 1
 
 # Probes hit Chatto's /readyz (startup + readiness) and /healthz (liveness).
+# The startup budget (initialDelaySeconds + periodSeconds * failureThreshold)
+# has to cover a COLD start: on first boot Chatto creates its JetStream streams
+# and object stores before it binds the http port, which on a 3-node cluster
+# takes far longer than a warm restart. Too small a budget and the kubelet
+# SIGTERMs the pod mid-initialization, which surfaces as a confusing
+# "Received shutdown signal" / "context canceled" error rather than a timeout.
 startupProbe:
   httpGet:
     path: /readyz
     port: http
   initialDelaySeconds: 5
   periodSeconds: 2
-  failureThreshold: 15
+  failureThreshold: 60
 readinessProbe:
   httpGet:
     path: /readyz
