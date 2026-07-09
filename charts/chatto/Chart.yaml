@@ -5,7 +5,7 @@ type: application
 
 # This is the chart version. It is independent of Chatto's own version and is
 # bumped on every change to the chart itself (SemVer).
-version: 0.1.0
+version: 0.1.1
 
 # The default Chatto version this chart deploys. Kept in sync with the pinned
 # image tag in values.yaml (image.tag). Bump both together.

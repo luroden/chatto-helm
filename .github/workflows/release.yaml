@@ -37,6 +37,15 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | \
             helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+      # `helm dependency build` resolves the repository URLs in Chart.lock against
+      # the local repo list, and errors if one is missing. lint-test.yaml gets
+      # these for free because `ct lint` registers a chart's dependency repos as a
+      # side effect; nothing does that here. Keep in sync with Chart.yaml.
+      - name: Add dependency repos
+        run: |
+          helm repo add nats https://nats-io.github.io/k8s/helm/charts/
+          helm repo add livekit https://helm.livekit.io
+
       - name: Resolve dependencies
         run: helm dependency build "$CHART_DIR"
 
