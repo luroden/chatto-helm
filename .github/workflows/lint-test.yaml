@@ -41,6 +41,15 @@ jobs:
       - name: Set up chart-testing
         uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
 
+      # `ct lint` and the `helm dependency build` below both resolve the nats and
+      # livekit subcharts, and neither adds a repo as a side effect, so they fail
+      # with "no repository definition for ...". Mirrors the same step in
+      # release.yaml; keep both in sync with Chart.yaml.
+      - name: Add dependency repos
+        run: |
+          helm repo add nats https://nats-io.github.io/k8s/helm/charts/
+          helm repo add livekit https://helm.livekit.io
+
       - name: Run chart-testing (list-changed)
         id: list-changed
         run: |
