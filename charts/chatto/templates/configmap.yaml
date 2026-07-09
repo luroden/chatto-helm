@@ -1,0 +1,175 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "chatto.fullname" . }}
+  labels:
+    {{- include "chatto.labels" . | nindent 4 }}
+data:
+  # --- General ---
+  CHATTO_LOG_LEVEL: {{ .Values.chatto.log.level | quote }}
+  CHATTO_LOG_FORMAT: {{ .Values.chatto.log.format | quote }}
+
+  # --- Web server ---
+  CHATTO_WEBSERVER_URL: {{ required "chatto.url is required (public HTTPS origin)" .Values.chatto.url | quote }}
+  CHATTO_WEBSERVER_PORT: {{ .Values.chatto.webserver.port | quote }}
+  CHATTO_WEBSERVER_WEBSOCKET_COMPRESSION: {{ .Values.chatto.webserver.websocketCompression | quote }}
+  CHATTO_WEBSERVER_REQUEST_LOGGING: {{ .Values.chatto.webserver.requestLogging | quote }}
+  {{- with .Values.chatto.webserver.allowedOrigins }}
+  CHATTO_WEBSERVER_ALLOWED_ORIGINS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.chatto.webserver.oauthRedirectOrigins }}
+  CHATTO_WEBSERVER_OAUTH_REDIRECT_ORIGINS: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.chatto.webserver.tls.enabled }}
+  CHATTO_WEBSERVER_TLS_ENABLED: "true"
+  CHATTO_WEBSERVER_TLS_DOMAIN: {{ required "chatto.webserver.tls.domain is required when tls.enabled" .Values.chatto.webserver.tls.domain | quote }}
+  CHATTO_WEBSERVER_TLS_EMAIL: {{ required "chatto.webserver.tls.email is required when tls.enabled" .Values.chatto.webserver.tls.email | quote }}
+  CHATTO_WEBSERVER_TLS_HTTP_PORT: {{ .Values.chatto.webserver.tls.httpPort | quote }}
+  {{- with .Values.chatto.webserver.tls.cacheDir }}
+  CHATTO_WEBSERVER_TLS_CACHE_DIR: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+
+  # --- NATS client ---
+  # The chart always drives an external NATS server (bundled subchart or your
+  # own), so Chatto's in-process embedded server stays off and its
+  # CHATTO_NATS_EMBEDDED_* knobs are deliberately not exposed.
+  CHATTO_NATS_EMBEDDED_ENABLED: "false"
+  CHATTO_NATS_CLIENT_URL: {{ include "chatto.natsUrl" . | quote }}
+  CHATTO_NATS_CLIENT_AUTH_METHOD: {{ include "chatto.natsAuthMethod" . | quote }}
+  CHATTO_NATS_REPLICAS: {{ include "chatto.natsReplicas" . | quote }}
+  {{- if and (not .Values.nats.enabled) .Values.externalNats.caCert }}
+  CHATTO_NATS_CLIENT_CA_CERT: {{ .Values.externalNats.caCert | quote }}
+  {{- end }}
+
+  # --- Operator API ---
+  # Root-equivalent Unix socket for `chatto operator ...`, never served on the
+  # web listener. Needed to create the first user when SMTP is off.
+  CHATTO_OPERATOR_API_ENABLED: {{ .Values.chatto.operatorApi.enabled | quote }}
+  {{- if .Values.chatto.operatorApi.enabled }}
+  {{- with .Values.chatto.operatorApi.socketPath }}
+  CHATTO_OPERATOR_API_SOCKET_PATH: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+
+  # --- Auth ---
+  CHATTO_AUTH_DIRECT_REGISTRATION: {{ .Values.chatto.auth.directRegistration | quote }}
+  {{- with .Values.chatto.auth.tokenTTL }}
+  CHATTO_AUTH_TOKEN_TTL: {{ . | quote }}
+  {{- end }}
+  CHATTO_AUTH_EMAIL_OTP_THROTTLING_ENABLED: {{ .Values.chatto.auth.emailOtp.throttlingEnabled | quote }}
+  CHATTO_AUTH_EMAIL_OTP_TTL: {{ .Values.chatto.auth.emailOtp.ttl | quote }}
+  CHATTO_AUTH_EMAIL_OTP_MAX_DELIVERED_CODES: {{ .Values.chatto.auth.emailOtp.maxDeliveredCodes | quote }}
+  CHATTO_AUTH_EMAIL_OTP_MAX_WRONG_ATTEMPTS: {{ .Values.chatto.auth.emailOtp.maxWrongAttempts | quote }}
+  {{- range $i, $p := .Values.chatto.auth.providers }}
+  CHATTO_AUTH_PROVIDERS_{{ $i }}_ID: {{ $p.id | quote }}
+  CHATTO_AUTH_PROVIDERS_{{ $i }}_TYPE: {{ $p.type | quote }}
+  {{- with $p.label }}
+  CHATTO_AUTH_PROVIDERS_{{ $i }}_LABEL: {{ . | quote }}
+  {{- end }}
+  {{- with $p.clientId }}
+  CHATTO_AUTH_PROVIDERS_{{ $i }}_CLIENT_ID: {{ . | quote }}
+  {{- end }}
+  {{- with $p.issuerUrl }}
+  CHATTO_AUTH_PROVIDERS_{{ $i }}_ISSUER_URL: {{ . | quote }}
+  {{- end }}
+  {{- with $p.scopes }}
+  CHATTO_AUTH_PROVIDERS_{{ $i }}_SCOPES: {{ . | quote }}
+  {{- end }}
+  {{- if hasKey $p "requestEmail" }}
+  CHATTO_AUTH_PROVIDERS_{{ $i }}_REQUEST_EMAIL: {{ $p.requestEmail | quote }}
+  {{- end }}
+  {{- if hasKey $p "autoProvision" }}
+  CHATTO_AUTH_PROVIDERS_{{ $i }}_AUTO_PROVISION: {{ $p.autoProvision | quote }}
+  {{- end }}
+  {{- range $optKey, $optVal := $p.providerOptions }}
+  CHATTO_AUTH_PROVIDERS_{{ $i }}_PROVIDER_OPTIONS_{{ $optKey }}: {{ $optVal | quote }}
+  {{- end }}
+  {{- end }}
+
+  # --- Assets ---
+  CHATTO_CORE_ASSETS_STORAGE_BACKEND: {{ .Values.chatto.assets.storageBackend | quote }}
+  CHATTO_CORE_ASSETS_MAX_UPLOAD_SIZE: {{ .Values.chatto.assets.maxUploadSize | quote }}
+  CHATTO_CORE_ASSETS_CACHE_ENABLED: {{ .Values.chatto.assets.cache.enabled | quote }}
+  CHATTO_CORE_ASSETS_CACHE_TTL: {{ .Values.chatto.assets.cache.ttl | quote }}
+  {{- if eq .Values.chatto.assets.storageBackend "s3" }}
+  CHATTO_CORE_ASSETS_S3_ENDPOINT: {{ .Values.chatto.assets.s3.endpoint | quote }}
+  CHATTO_CORE_ASSETS_S3_BUCKET: {{ .Values.chatto.assets.s3.bucket | quote }}
+  CHATTO_CORE_ASSETS_S3_REGION: {{ .Values.chatto.assets.s3.region | quote }}
+  CHATTO_CORE_ASSETS_S3_USE_SSL: {{ .Values.chatto.assets.s3.useSSL | quote }}
+  CHATTO_CORE_ASSETS_S3_PATH_STYLE: {{ .Values.chatto.assets.s3.pathStyle | quote }}
+  {{- with .Values.chatto.assets.s3.pathPrefix }}
+  CHATTO_CORE_ASSETS_S3_PATH_PREFIX: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+
+  # --- SMTP ---
+  CHATTO_SMTP_ENABLED: {{ .Values.chatto.smtp.enabled | quote }}
+  {{- if .Values.chatto.smtp.enabled }}
+  CHATTO_SMTP_HOST: {{ .Values.chatto.smtp.host | quote }}
+  CHATTO_SMTP_PORT: {{ .Values.chatto.smtp.port | quote }}
+  CHATTO_SMTP_TLS: {{ .Values.chatto.smtp.tls | quote }}
+  CHATTO_SMTP_TLS_SKIP_VERIFY: {{ .Values.chatto.smtp.tlsSkipVerify | quote }}
+  CHATTO_SMTP_FROM: {{ .Values.chatto.smtp.from | quote }}
+  {{- with .Values.chatto.smtp.tlsServerName }}
+  CHATTO_SMTP_TLS_SERVER_NAME: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+
+  # --- Push ---
+  CHATTO_PUSH_ENABLED: {{ .Values.chatto.push.enabled | quote }}
+  {{- if and .Values.chatto.push.enabled .Values.chatto.push.vapidSubject }}
+  CHATTO_PUSH_VAPID_SUBJECT: {{ .Values.chatto.push.vapidSubject | quote }}
+  {{- end }}
+
+  # --- Video ---
+  CHATTO_VIDEO_ENABLED: {{ .Values.chatto.video.enabled | quote }}
+  {{- if .Values.chatto.video.enabled }}
+  CHATTO_VIDEO_MAX_CONCURRENT: {{ .Values.chatto.video.maxConcurrent | quote }}
+  CHATTO_VIDEO_MAX_UPLOAD_SIZE: {{ .Values.chatto.video.maxUploadSize | quote }}
+  {{- with .Values.chatto.video.ffmpegPath }}
+  CHATTO_VIDEO_FFMPEG_PATH: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.chatto.video.ffprobePath }}
+  CHATTO_VIDEO_FFPROBE_PATH: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.chatto.video.tempDir }}
+  CHATTO_VIDEO_TEMP_DIR: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+
+  # --- LiveKit ---
+  CHATTO_LIVEKIT_ENABLED: {{ .Values.chatto.livekit.enabled | quote }}
+  {{- if .Values.chatto.livekit.enabled }}
+  {{- with .Values.chatto.livekit.url }}
+  CHATTO_LIVEKIT_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.chatto.livekit.serverId }}
+  CHATTO_LIVEKIT_SERVER_ID: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.chatto.livekit.webhook.url }}
+  CHATTO_LIVEKIT_WEBHOOK_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.chatto.livekit.webhook.apiKey }}
+  CHATTO_LIVEKIT_WEBHOOK_API_KEY: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+
+  # --- Metrics ---
+  CHATTO_METRICS_ENABLED: {{ .Values.chatto.metrics.enabled | quote }}
+  {{- if .Values.chatto.metrics.enabled }}
+  CHATTO_METRICS_BIND_ADDRESS: "0.0.0.0"
+  CHATTO_METRICS_PORT: {{ .Values.chatto.metrics.port | quote }}
+  CHATTO_METRICS_PATH: {{ .Values.chatto.metrics.path | quote }}
+  CHATTO_METRICS_PPROF: {{ .Values.chatto.metrics.pprof | quote }}
+  {{- end }}
+
+  # --- Misc ---
+  {{- with .Values.chatto.owners.emails }}
+  CHATTO_OWNERS_EMAILS: {{ . | quote }}
+  {{- end }}
+  CHATTO_LIMITS_MAX_USERS: {{ .Values.chatto.limits.maxUsers | quote }}
+
+  {{- range $k, $v := .Values.chatto.extra }}
+  CHATTO_{{ $k }}: {{ $v | quote }}
+  {{- end }}

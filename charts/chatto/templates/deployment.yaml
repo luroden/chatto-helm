@@ -1,0 +1,205 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chatto.fullname" . }}
+  labels:
+    {{- include "chatto.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "chatto.selectorLabels" . | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  template:
+    metadata:
+      annotations:
+        # Roll pods when the rendered config/secret changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "chatto.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "chatto.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: chatto
+          image: {{ include "chatto.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.chatto.webserver.port }}
+              protocol: TCP
+            {{- if .Values.chatto.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.chatto.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "chatto.fullname" . }}
+            - secretRef:
+                name: {{ include "chatto.configSecretName" . }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- $natsSecret := include "chatto.natsSecretName" . }}
+            {{- $method := include "chatto.natsAuthMethod" . }}
+            {{- if eq $method "token" }}
+            - name: CHATTO_NATS_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $natsSecret }}
+                  key: token
+            {{- else if eq $method "userpass" }}
+            - name: CHATTO_NATS_CLIENT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $natsSecret }}
+                  key: username
+            - name: CHATTO_NATS_CLIENT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $natsSecret }}
+                  key: password
+            {{- else if eq $method "credentials" }}
+            - name: CHATTO_NATS_CLIENT_CREDENTIALS_FILE
+              value: /etc/chatto/nats/nats.creds
+            {{- else if eq $method "nkey" }}
+            - name: CHATTO_NATS_CLIENT_NKEY_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $natsSecret }}
+                  key: nkeySeed
+            {{- end }}
+            {{- if .Values.secrets.existingSecret }}
+            {{- range $k := (list "CHATTO_WEBSERVER_COOKIE_SIGNING_SECRET" "CHATTO_WEBSERVER_COOKIE_ENCRYPTION_SECRET" "CHATTO_CORE_SECRET_KEY" "CHATTO_CORE_ASSETS_SIGNING_SECRET") }}
+            - name: {{ $k }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.existingSecret }}
+                  key: {{ $k }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.chatto.assets.s3.existingSecret }}
+            - name: CHATTO_CORE_ASSETS_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: accessKeyId
+            - name: CHATTO_CORE_ASSETS_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: secretAccessKey
+            {{- end }}
+            {{- if and .Values.chatto.smtp.enabled .Values.chatto.smtp.existingSecret }}
+            - name: CHATTO_SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chatto.smtp.existingSecret }}
+                  key: username
+            - name: CHATTO_SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chatto.smtp.existingSecret }}
+                  key: password
+            {{- end }}
+            {{- if and .Values.chatto.push.enabled .Values.chatto.push.existingSecret }}
+            - name: CHATTO_PUSH_VAPID_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chatto.push.existingSecret }}
+                  key: vapidPublicKey
+            - name: CHATTO_PUSH_VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chatto.push.existingSecret }}
+                  key: vapidPrivateKey
+            {{- end }}
+            {{- if and .Values.chatto.livekit.enabled .Values.chatto.livekit.existingSecret }}
+            - name: CHATTO_LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chatto.livekit.existingSecret }}
+                  key: apiKey
+            - name: CHATTO_LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chatto.livekit.existingSecret }}
+                  key: apiSecret
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if eq (include "chatto.natsAuthMethod" .) "credentials" }}
+            - name: nats-creds
+              mountPath: /etc/chatto/nats
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        {{- if eq (include "chatto.natsAuthMethod" .) "credentials" }}
+        - name: nats-creds
+          secret:
+            secretName: {{ include "chatto.natsSecretName" . }}
+            items:
+              - key: credentials
+                path: nats.creds
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

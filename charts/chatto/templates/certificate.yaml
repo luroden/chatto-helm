@@ -1,0 +1,33 @@
+{{- if and .Values.gateway.enabled .Values.gateway.tls.enabled .Values.gateway.tls.certificate.enabled }}
+{{- $cert := .Values.gateway.tls.certificate }}
+{{- if not $cert.issuerRef.name }}
+{{- fail "gateway.tls.certificate.enabled=true requires gateway.tls.certificate.issuerRef.name" }}
+{{- end }}
+{{- $hostnames := include "chatto.gatewayHostnames" . | fromYamlArray }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "chatto.fullname" . }}-tls
+  labels:
+    {{- include "chatto.labels" . | nindent 4 }}
+  {{- with $cert.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ include "chatto.gatewayTlsSecretName" . }}
+  {{- with $cert.duration }}
+  duration: {{ . }}
+  {{- end }}
+  {{- with $cert.renewBefore }}
+  renewBefore: {{ . }}
+  {{- end }}
+  dnsNames:
+    {{- range $hostnames }}
+    - {{ . | quote }}
+    {{- end }}
+  issuerRef:
+    name: {{ $cert.issuerRef.name }}
+    kind: {{ $cert.issuerRef.kind }}
+    group: {{ $cert.issuerRef.group }}
+{{- end }}

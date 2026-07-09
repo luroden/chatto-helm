@@ -1,0 +1,33 @@
+# Values used by chart-testing (ct) to install the chart on a throwaway kind
+# cluster. Kept lightweight: single-node NATS, modest resources, no ingress.
+# Each file in ci/ must produce an installable release.
+chatto:
+  url: https://chat.ci.example.com
+  video:
+    enabled: false
+
+# Single-node NATS is enough for the smoke test (CHATTO_NATS_REPLICAS resolves
+# to 1 automatically when clustering is disabled).
+nats:
+  config:
+    cluster:
+      enabled: false
+    jetstream:
+      fileStore:
+        pvc:
+          size: 1Gi
+  container:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+
+replicaCount: 1
+podDisruptionBudget:
+  enabled: false
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

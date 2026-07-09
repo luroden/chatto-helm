@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Actions in the workflows are pinned to commit SHAs, which do not benefit
+  # from a tag moving to a patched release. Dependabot rewrites the SHA and the
+  # trailing `# vX.Y.Z` comment together, so the pins stay both immutable and
+  # current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"

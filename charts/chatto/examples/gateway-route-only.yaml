@@ -1,0 +1,59 @@
+# Gateway API, attaching to a Gateway somebody else owns.
+#
+# The common shape on a cluster where the platform team runs one shared Gateway
+# (often in its own namespace) with a listener per hostname, and each app brings
+# only an HTTPRoute. Chatto creates no Gateway and no Certificate here — the
+# listener already terminates TLS for chat.example.com.
+#
+#   helm install chatto oci://ghcr.io/luroden/charts/chatto \
+#     -n chatto --create-namespace -f examples/gateway-route-only.yaml
+#
+# Requires: the Gateway API CRDs, a controller, a default StorageClass, and a
+# Gateway whose listener admits routes from this namespace
+# (allowedRoutes.namespaces.from: All, or a matching selector).
+
+chatto:
+  url: https://chat.example.com
+  webserver:
+    allowedOrigins: https://chat.example.com
+    oauthRedirectOrigins: https://chat.example.com
+
+service:
+  type: ClusterIP
+  port: 80
+
+httpRoute:
+  enabled: true
+  # hostnames defaults to the host in chatto.url; spelled out for clarity.
+  hostnames:
+    - chat.example.com
+  parentRefs:
+    - name: platform-gateway
+      # Cross-namespace attachment. The Gateway's listener must allow it, and
+      # some controllers additionally require a ReferenceGrant.
+      namespace: gateway-system
+      # Pin to one listener. Without sectionName the route attaches to every
+      # listener on the Gateway, including any plain-HTTP one.
+      sectionName: https-chat
+  # The chart's default: no request timeout, because Chatto's WebSockets outlive
+  # any finite one. Left explicit here since it is the single most common reason
+  # a Gateway API migration "works" but drops sessions after 30 seconds.
+  timeouts:
+    request: 0s
+    backendRequest: 0s
+
+nats:
+  enabled: true
+  config:
+    cluster:
+      enabled: true
+      replicas: 3
+    jetstream:
+      fileStore:
+        pvc:
+          size: 20Gi
+
+replicaCount: 2
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

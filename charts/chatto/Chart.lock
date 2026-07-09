@@ -1,0 +1,9 @@
+dependencies:
+- name: nats
+  repository: https://nats-io.github.io/k8s/helm/charts/
+  version: 2.14.2
+- name: livekit-server
+  repository: https://helm.livekit.io
+  version: 1.9.0
+digest: sha256:c45a6a7add1f744be7bc0ac71ee86369403d89958c0fd6062b695c67d37cebb3
+generated: "2026-07-08T17:01:59.391078-07:00"

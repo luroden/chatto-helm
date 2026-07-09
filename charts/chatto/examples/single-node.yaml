@@ -1,0 +1,74 @@
+# Single-node install for a homelab, a dev cluster, or a small team.
+#
+#   helm install chatto oci://ghcr.io/luroden/charts/chatto \
+#     -n chatto --create-namespace -f examples/single-node.yaml
+#
+# Trades availability for footprint: one Chatto replica, one NATS node, no
+# JetStream Raft quorum. A node reboot means downtime, and JetStream data lives
+# on a single PVC — back it up.
+
+chatto:
+  url: https://chat.example.com
+  owners:
+    emails: admin@example.com
+  # Transcoding is CPU-hungry. Leave it on but keep one job at a time.
+  video:
+    enabled: true
+    maxConcurrent: 1
+
+replicaCount: 1
+
+# With one replica there is nothing to disrupt-budget, and minAvailable=1 would
+# block node drains entirely.
+podDisruptionBudget:
+  enabled: false
+
+# A zero-downtime rollout needs room to surge a second pod. On a single tight
+# node, accept a brief gap instead of a stuck rollout.
+#
+# `rollingUpdate: null` is required: Helm deep-merges this map over the chart
+# default, and the API server rejects a Recreate strategy that still carries a
+# rollingUpdate block.
+updateStrategy:
+  type: Recreate
+  rollingUpdate: null
+
+nats:
+  config:
+    cluster:
+      # Single node: CHATTO_NATS_REPLICAS resolves to 1 automatically.
+      enabled: false
+    jetstream:
+      fileStore:
+        pvc:
+          size: 5Gi
+  container:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# No ingress controller? Expose the Service directly. Chatto speaks plain HTTP
+# here, so terminate TLS at the load balancer.
+#
+# Chatto can instead terminate TLS itself via chatto.webserver.tls (Let's
+# Encrypt autocert, single replica only). If you go that route you must also
+# override startupProbe/readinessProbe/livenessProbe with
+# `httpGet.scheme: HTTPS` — the chart's default probes speak HTTP and will fail
+# against a TLS listener.
+service:
+  type: LoadBalancer
+  port: 80
+  externalTrafficPolicy: Local
+
+# Spreading one pod across nodes is meaningless.
+topologySpreadConstraints: []

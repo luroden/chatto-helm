@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Chatto Helm chart values",
+  "type": "object",
+  "properties": {
+    "replicaCount": { "type": "integer", "minimum": 1 },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "chatto": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "webserver": {
+          "type": "object",
+          "properties": {
+            "port": { "type": "integer" },
+            "tls": {
+              "type": "object",
+              "properties": { "enabled": { "type": "boolean" } }
+            }
+          }
+        },
+        "log": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "string", "enum": ["debug", "info", "warn", "error"] },
+            "format": { "type": "string", "enum": ["auto", "text", "json", "logfmt"] }
+          }
+        },
+        "assets": {
+          "type": "object",
+          "properties": {
+            "storageBackend": { "type": "string", "enum": ["nats", "s3"] }
+          }
+        },
+        "smtp": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "tls": { "type": "string", "enum": ["mandatory", "implicit", "opportunistic"] }
+          }
+        },
+        "push": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+        "video": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+        "livekit": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+        "metrics": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+        "auth": {
+          "type": "object",
+          "properties": { "providers": { "type": "array" } }
+        },
+        "operatorApi": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "socketPath": { "type": "string" }
+          }
+        }
+      }
+    },
+    "secrets": { "type": "object" },
+    "natsAuth": { "type": "object" },
+    "externalNats": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "replicas": { "type": "integer", "enum": [1, 3, 5] },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "method": { "type": "string", "enum": ["none", "token", "userpass", "credentials", "nkey"] }
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "port": { "type": "integer" }
+      }
+    },
+    "ingress": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+    "httpRoute": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "hostnames": { "type": "array", "items": { "type": "string" } },
+        "parentRefs": { "type": "array", "items": { "type": "object" } },
+        "matches": { "type": "array" },
+        "filters": { "type": "array" }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "gatewayClassName": { "type": "string" },
+        "hostnames": { "type": "array", "items": { "type": "string" } },
+        "http": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "port": { "type": "integer" } } },
+        "tls": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "port": { "type": "integer" },
+            "secretName": { "type": "string" },
+            "certificate": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "issuerRef": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "kind": { "type": "string", "enum": ["Issuer", "ClusterIssuer"] },
+                    "group": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "autoscaling": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+    "podDisruptionBudget": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+    "serviceMonitor": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+    "networkPolicy": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+    "nats": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+    "livekit": { "type": "object", "properties": { "enabled": { "type": "boolean" } } }
+  }
+}

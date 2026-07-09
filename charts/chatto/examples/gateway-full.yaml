@@ -1,0 +1,81 @@
+# Gateway API, with the chart owning the whole edge: HTTPRoute + Gateway +
+# cert-manager Certificate.
+#
+# Use this when Chatto gets its own Gateway — a dedicated load balancer address
+# for chat.example.com — rather than sharing the cluster's. cert-manager issues
+# the listener certificate from an Issuer you already run.
+#
+#   helm install chatto oci://ghcr.io/luroden/charts/chatto \
+#     -n chatto --create-namespace -f examples/gateway-full.yaml
+#
+# Requires: the Gateway API CRDs and a controller, cert-manager, an existing
+# ClusterIssuer named below (the chart never creates one), and a default
+# StorageClass.
+
+chatto:
+  url: https://chat.example.com
+  webserver:
+    allowedOrigins: https://chat.example.com
+    oauthRedirectOrigins: https://chat.example.com
+
+service:
+  type: ClusterIP
+  port: 80
+
+httpRoute:
+  enabled: true
+  # No parentRefs: with gateway.enabled below, the route attaches to the
+  # Gateway this release creates.
+  timeouts:
+    request: 0s
+    backendRequest: 0s
+
+gateway:
+  enabled: true
+  # `kubectl get gatewayclass` to find yours.
+  gatewayClassName: nginx
+  # Defaults to the host in chatto.url. One listener per hostname, per protocol.
+  hostnames:
+    - chat.example.com
+  allowedRoutes:
+    namespaces:
+      from: Same
+  http:
+    # Serves Chatto over cleartext HTTP alongside HTTPS, because the HTTPRoute
+    # above attaches to every listener. Turn this on only if you need it: an
+    # ACME HTTP-01 solver pointed at *this* Gateway needs port 80 to answer the
+    # challenge. A DNS-01 issuer, or an HTTP-01 solver pointed at some other
+    # Gateway, does not.
+    enabled: false
+  tls:
+    enabled: true
+    port: 443
+    # cert-manager writes this Secret; the listener reads it. Defaults to
+    # <fullname>-tls.
+    secretName: chatto-tls
+    certificate:
+      enabled: true
+      issuerRef:
+        name: letsencrypt-prod
+        kind: ClusterIssuer
+      duration: 2160h # 90d
+      renewBefore: 720h # 30d
+
+# The Gateway serves nothing on :443 until the Certificate goes Ready. If it
+# stays pending, the issuer's solver is usually the cause:
+#   kubectl -n chatto describe certificate chatto-tls
+nats:
+  enabled: true
+  config:
+    cluster:
+      enabled: true
+      replicas: 3
+    jetstream:
+      fileStore:
+        pvc:
+          size: 20Gi
+
+replicaCount: 2
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

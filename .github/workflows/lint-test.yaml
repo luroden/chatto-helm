@@ -1,0 +1,120 @@
+name: Lint and Test
+
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - "ct.yaml"
+      - ".github/workflows/lint-test.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "ct.yaml"
+
+# This job only reads the repo and builds a throwaway cluster. Deny everything
+# else, so a compromised action or chart dependency cannot use the workflow
+# token to write to the repo or publish packages.
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      # Third-party actions are pinned to a commit SHA, not a tag: tags are
+      # mutable, so a compromised upstream could repoint one at malicious code
+      # and it would run here with this workflow's token. The trailing comment
+      # is the human-readable version, and is what Dependabot rewrites.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.16.3
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
+
+      - name: Run chart-testing (list-changed)
+        id: list-changed
+        run: |
+          changed=$(ct list-changed --config ct.yaml)
+          if [[ -n "$changed" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run chart-testing (lint)
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct lint --config ct.yaml
+
+      # The examples/ files are documentation, so they must keep rendering as the
+      # chart changes. ct never touches them — it only installs ci/*.yaml — and
+      # several reference CRDs or external services a kind cluster does not have.
+      # So validate them by rendering, not installing.
+      - name: Install kubeconform
+        if: steps.list-changed.outputs.changed == 'true'
+        env:
+          # sha256 of kubeconform-linux-amd64.tar.gz for the version below. A
+          # release asset can be replaced after publication, so verify it.
+          KUBECONFORM_VERSION: v0.6.7
+          KUBECONFORM_SHA256: 95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73
+        run: |
+          set -euo pipefail
+          curl -sSLf -o /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  /tmp/kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo mv /tmp/kubeconform /usr/local/bin/
+
+      - name: Render and validate example values files
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          # Without pipefail a `helm template` failure is masked by kubeconform's
+          # exit status.
+          set -o pipefail
+          helm dependency build charts/chatto
+          # -ignore-missing-schemas alone would silently skip every CRD, including
+          # the Gateway/HTTPRoute/Certificate that the gateway examples exist to
+          # exercise. The CRDs-catalog supplies their schemas so they are really
+          # validated; anything still missing falls through to being skipped.
+          crds='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          # Every example re-fetches the same schemas, and a rate-limited fetch is
+          # a hard error rather than a skip. Cache them across the loop.
+          cache=$(mktemp -d)
+          rc=0
+          for f in charts/chatto/examples/*.yaml; do
+            echo "::group::$f"
+            helm template chatto charts/chatto -f "$f" \
+              | kubeconform -strict -summary -ignore-missing-schemas \
+                  -kubernetes-version 1.29.0 -cache "$cache" \
+                  -schema-location default -schema-location "$crds" - || rc=1
+            echo "::endgroup::"
+          done
+          exit $rc
+
+      - name: Create kind cluster
+        if: steps.list-changed.outputs.changed == 'true'
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+
+      # ci/gateway-values.yaml renders a Gateway, an HTTPRoute and a cert-manager
+      # Certificate, so the API server needs their CRDs to accept `ct install`.
+      # The controllers are deliberately absent: nothing reconciles those objects,
+      # and nothing in the smoke test routes through them.
+      - name: Install Gateway API and cert-manager CRDs
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          kubectl apply -f \
+            https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/standard-install.yaml
+          kubectl apply -f \
+            https://github.com/cert-manager/cert-manager/releases/download/v1.19.2/cert-manager.crds.yaml
+
+      - name: Run chart-testing (install)
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct install --config ct.yaml

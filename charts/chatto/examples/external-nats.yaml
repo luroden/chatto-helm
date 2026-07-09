@@ -1,0 +1,54 @@
+# Chatto against an externally managed NATS JetStream cluster (Synadia Cloud, a
+# NATS operator deployment, or a nats chart release you own separately).
+#
+#   kubectl -n chatto create secret generic chatto-nats-creds \
+#     --from-file=credentials=./chatto.creds
+#
+#   helm install chatto oci://ghcr.io/luroden/charts/chatto \
+#     -n chatto --create-namespace -f examples/external-nats.yaml
+#
+# The bundled NATS subchart is switched off entirely, so nothing here provisions
+# storage. Chatto stays stateless; all durability is the external cluster's job.
+
+chatto:
+  url: https://chat.example.com
+  owners:
+    emails: admin@example.com
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  hosts:
+    - host: chat.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: chatto-tls
+      hosts:
+        - chat.example.com
+
+# Do not deploy the bundled NATS StatefulSet or its PVCs.
+nats:
+  enabled: false
+
+externalNats:
+  # Comma-separated seed URLs. The client fails over between them, so list every
+  # server in the cluster.
+  url: nats://nats-0.nats.data.svc:4222,nats://nats-1.nats.data.svc:4222,nats://nats-2.nats.data.svc:4222
+
+  # Stream replication factor (CHATTO_NATS_REPLICAS). Must be odd and must not
+  # exceed the cluster size, or JetStream stream creation fails at startup.
+  replicas: 3
+
+  auth:
+    # none | token | userpass | credentials
+    method: credentials
+    # A Secret you create yourself, holding the NATS .creds file under the key
+    # `credentials`. The chart mounts it at /etc/chatto/nats/nats.creds and does
+    # not manage or template its contents.
+    existingSecret: chatto-nats-creds

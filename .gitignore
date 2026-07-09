@@ -1,0 +1,18 @@
+# Helm — vendored dependency archives are pulled by `helm dependency build`
+# from the committed Chart.lock, so they are not tracked.
+charts/**/charts/
+charts/**/*.tgz
+
+# Local overrides
+*.local.yaml
+values.local.yaml
+secrets.local.yaml
+
+# Local tooling / editor
+.claude/
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.bak
+*.orig

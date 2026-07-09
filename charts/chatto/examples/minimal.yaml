@@ -1,0 +1,35 @@
+# Minimal production install: Chatto behind an ingress controller, with the
+# bundled 3-node NATS JetStream cluster and everything else left at defaults.
+#
+#   helm install chatto oci://ghcr.io/luroden/charts/chatto \
+#     -n chatto --create-namespace -f examples/minimal.yaml
+#
+# This is the smallest values file that yields a supportable deployment.
+
+chatto:
+  # The public origin. Must match what users type in the browser, including the
+  # scheme — it is used for OAuth callbacks and asset links.
+  url: https://chat.example.com
+
+  # Bootstrap the first admin. Everyone else self-registers.
+  owners:
+    emails: admin@example.com
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Chatto holds long-lived WebSocket connections. The nginx defaults (60s)
+    # tear them down mid-session; raise both timeouts.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  hosts:
+    - host: chat.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: chatto-tls
+      hosts:
+        - chat.example.com

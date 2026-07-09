@@ -1,0 +1,84 @@
+Chatto {{ .Chart.AppVersion }} has been deployed as release "{{ .Release.Name }}".
+
+{{ if .Values.nats.enabled -}}
+Bundled NATS JetStream: {{ include "chatto.natsFullname" . }} ({{ include "chatto.natsReplicas" . }} replica(s), CHATTO_NATS_REPLICAS={{ include "chatto.natsReplicas" . }})
+{{- else -}}
+External NATS: {{ .Values.externalNats.url }} (CHATTO_NATS_REPLICAS={{ include "chatto.natsReplicas" . }})
+{{- end }}
+
+Public URL (CHATTO_WEBSERVER_URL): {{ .Values.chatto.url }}
+
+Watch the rollout:
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "chatto.fullname" . }}
+
+Reach Chatto:
+{{- if .Values.ingress.enabled }}
+  Ingress is enabled. Point your DNS at the ingress controller and browse:
+  {{- range .Values.ingress.hosts }}
+    http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+  {{- end }}
+{{- else if .Values.httpRoute.enabled }}
+  An HTTPRoute was created{{ if .Values.gateway.enabled }}, attached to this release's Gateway
+  ({{ include "chatto.fullname" . }}, GatewayClass {{ .Values.gateway.gatewayClassName }}){{ else }}, attached to:
+  {{- range .Values.httpRoute.parentRefs }}
+    {{ .name }}{{ with .namespace }} (namespace {{ . }}){{ end }}{{ with .sectionName }} listener {{ . }}{{ end }}
+  {{- end }}{{ end }}
+
+  Check that it was accepted by the controller:
+    kubectl -n {{ .Release.Namespace }} describe httproute {{ include "chatto.fullname" . }}
+{{- if .Values.gateway.enabled }}
+
+  Point your DNS at the Gateway's address once it is programmed:
+    kubectl -n {{ .Release.Namespace }} get gateway {{ include "chatto.fullname" . }} -w
+{{- if .Values.gateway.tls.certificate.enabled }}
+
+  cert-manager is issuing {{ include "chatto.gatewayTlsSecretName" . }} from
+  {{ .Values.gateway.tls.certificate.issuerRef.kind }}/{{ .Values.gateway.tls.certificate.issuerRef.name }}. Watch it:
+    kubectl -n {{ .Release.Namespace }} get certificate {{ include "chatto.fullname" . }}-tls -w
+  The Gateway serves no traffic on :{{ .Values.gateway.tls.port }} until the certificate is Ready.
+{{- end }}
+{{- end }}
+{{- else if eq .Values.service.type "LoadBalancer" }}
+  A LoadBalancer service was created. Get its external address:
+    kubectl -n {{ .Release.Namespace }} get svc {{ include "chatto.fullname" . }} -w
+  Ensure your DNS for {{ .Values.chatto.url }} resolves to that address.
+{{- else }}
+  The Service type is {{ .Values.service.type }}. Port-forward to try it locally:
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "chatto.fullname" . }} 8080:{{ .Values.service.port }}
+  then open http://localhost:8080
+{{- end }}
+
+{{- if not (or .Values.ingress.enabled .Values.httpRoute.enabled .Values.chatto.webserver.tls.enabled (eq .Values.service.type "LoadBalancer")) }}
+
+NOTE: Chatto serves plain HTTP and expects TLS to be terminated upstream.
+Configure an ingress, a Gateway API HTTPRoute, a LoadBalancer with TLS, or set
+chatto.webserver.tls.enabled=true (single replica only) for production.
+{{- end }}
+
+{{- if not .Values.chatto.smtp.enabled }}
+
+FIRST USER: a fresh install has no accounts, and browser sign-up needs to send a
+verification email — but chatto.smtp.enabled=false, so it will fail with
+"Failed to send email". Either configure chatto.smtp.*, or:
+{{- if .Values.chatto.operatorApi.enabled }}
+
+  The Operator API is enabled. Create the first user now:
+    kubectl -n {{ .Release.Namespace }} exec -it deploy/{{ include "chatto.fullname" . }} -- \
+      /chatto operator user create --login admin \
+        --verified-email admin@example.com --password-stdin
+
+  It is root-equivalent to anyone who can exec into the pod. Set
+  chatto.operatorApi.enabled=false once you have an account.
+{{- else }}
+
+    helm upgrade {{ .Release.Name }} -n {{ .Release.Namespace }} ... --set chatto.operatorApi.enabled=true
+
+  then `/chatto operator user create --login admin --verified-email you@example.com
+  --password-stdin` inside the pod, and turn it back off.
+{{- end }}
+{{- end }}
+
+Run the built-in smoke test:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+Full configuration reference: https://docs.chatto.run/reference/environment-variables/

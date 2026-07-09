@@ -1,0 +1,59 @@
+apiVersion: v2
+name: chatto
+description: A Helm chart for Chatto — a self-hosted chat application for teams and communities, backed by NATS JetStream.
+type: application
+
+# This is the chart version. It is independent of Chatto's own version and is
+# bumped on every change to the chart itself (SemVer).
+version: 0.1.0
+
+# The default Chatto version this chart deploys. Kept in sync with the pinned
+# image tag in values.yaml (image.tag). Bump both together.
+appVersion: "0.4.2"
+
+home: https://chatto.run
+sources:
+  - https://github.com/chattocorp/chatto
+  - https://github.com/luroden/chatto-helm
+icon: https://raw.githubusercontent.com/chattocorp/chatto/main/favicon.png
+
+keywords:
+  - chatto
+  - chat
+  - messaging
+  - collaboration
+  - nats
+  - jetstream
+
+maintainers:
+  - name: luroden
+    url: https://github.com/luroden
+
+annotations:
+  # Rendered by artifacthub.io and some UIs. Chatto's server is AGPL; this
+  # chart is Apache-2.0 (see LICENSE), matching Chatto's example/integration
+  # licensing boundary.
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: Chatto documentation
+      url: https://docs.chatto.run
+    - name: Chatto source
+      url: https://github.com/chattocorp/chatto
+
+dependencies:
+  # NATS JetStream is Chatto's primary data store. Enabled by default so a
+  # fresh `helm install` yields a working, clustered deployment. Disable it
+  # (nats.enabled=false) to connect Chatto to an externally managed NATS.
+  - name: nats
+    version: 2.14.2
+    repository: https://nats-io.github.io/k8s/helm/charts/
+    condition: nats.enabled
+
+  # LiveKit powers optional voice/video calls. Disabled by default: a usable
+  # LiveKit deployment needs UDP media/TURN networking that most clusters do
+  # not provide out of the box. See values.yaml and docs for guidance.
+  - name: livekit-server
+    version: 1.9.0
+    repository: https://helm.livekit.io
+    alias: livekit
+    condition: livekit.enabled

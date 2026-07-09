@@ -1,0 +1,326 @@
+# Fully featured reference install: every optional subsystem turned on.
+#
+# Assumes the release is named `chatto` (several in-cluster DNS names below
+# derive from the release name). Adjust if you name it something else.
+#
+# Create the referenced Secrets first — this file contains no credentials:
+#
+#   kubectl -n chatto create secret generic chatto-s3 \
+#     --from-literal=accessKeyId=AKIA... --from-literal=secretAccessKey=...
+#   kubectl -n chatto create secret generic chatto-smtp \
+#     --from-literal=username=apikey --from-literal=password=...
+#   kubectl -n chatto create secret generic chatto-push \
+#     --from-literal=vapidPublicKey=... --from-literal=vapidPrivateKey=...
+#   kubectl -n chatto create secret generic chatto-livekit \
+#     --from-literal=apiKey=chatto --from-literal=apiSecret=$LK_SECRET
+#
+#   helm install chatto oci://ghcr.io/luroden/charts/chatto \
+#     -n chatto --create-namespace -f examples/full.yaml \
+#     --set chatto.auth.providers[0].clientSecret=$OKTA_SECRET \
+#     --set livekit.livekit.keys.chatto=$LK_SECRET
+#
+# Requires: an ingress controller, cert-manager, a default StorageClass, the
+# Prometheus Operator CRDs (for serviceMonitor), a CNI that enforces
+# NetworkPolicy, and metrics-server (for the HPA).
+
+replicaCount: 3
+
+image:
+  repository: ghcr.io/chattocorp/chatto
+  # Pin explicitly in production rather than inheriting the chart appVersion,
+  # so a chart upgrade never moves the application version underneath you.
+  tag: "0.4.2"
+  pullPolicy: IfNotPresent
+
+chatto:
+  url: https://chat.example.com
+
+  owners:
+    emails: admin@example.com,ops@example.com
+
+  webserver:
+    port: 4000
+    allowedOrigins: https://chat.example.com
+    oauthRedirectOrigins: https://chat.example.com
+    websocketCompression: true
+    requestLogging: false
+
+  log:
+    level: info
+    format: json
+
+  auth:
+    # Invite/SSO only — no open sign-up on a public hostname.
+    directRegistration: false
+    tokenTTL: 30d
+    providers:
+      - id: okta
+        type: oidc
+        label: Okta
+        clientId: 0oa1example
+        issuerUrl: https://example.okta.com/oauth2/default
+        scopes: openid,profile,email
+        requestEmail: true
+        autoProvision: true
+        # NOTE: provider clientSecret values are templated into the chart's own
+        # Secret from this file. Keep them out of git — pass them at install
+        # time with `--set chatto.auth.providers[0].clientSecret=...`, or use a
+        # secrets manager that injects them.
+        clientSecret: ""
+
+  assets:
+    # Offload uploads to object storage so JetStream holds messages, not blobs.
+    storageBackend: s3
+    maxUploadSize: 100MB
+    cache:
+      enabled: true
+      ttl: 7d
+    s3:
+      endpoint: s3.us-east-1.amazonaws.com
+      bucket: chatto-assets
+      region: us-east-1
+      pathPrefix: prod/
+      useSSL: true
+      pathStyle: auto
+      # Keys come from this Secret (keys: accessKeyId, secretAccessKey); the
+      # chart injects them as env vars and never writes them to its own Secret.
+      existingSecret: chatto-s3
+
+  smtp:
+    enabled: true
+    host: smtp.sendgrid.net
+    port: 587
+    tls: mandatory
+    from: chatto@example.com
+    # Secret keys: username, password
+    existingSecret: chatto-smtp
+
+  push:
+    enabled: true
+    vapidSubject: mailto:admin@example.com
+    # Secret keys: vapidPublicKey, vapidPrivateKey
+    existingSecret: chatto-push
+
+  video:
+    enabled: true
+    maxConcurrent: 4
+    maxUploadSize: 500MB
+
+  livekit:
+    enabled: true
+    # Points at the bundled livekit subchart's Service (<release>-livekit:80).
+    url: ws://chatto-livekit
+    # Secret keys: apiKey, apiSecret. The api key/secret pair here must match
+    # one of the pairs in `livekit.livekit.keys` below.
+    existingSecret: chatto-livekit
+
+  metrics:
+    enabled: true
+    port: 9090
+    path: /metrics
+
+  limits:
+    maxUsers: 500
+
+# The chart's four crypto keys (cookie signing/encryption, core secret, asset
+# signing) are auto-generated on first install and reused across upgrades via a
+# cluster `lookup`. That lookup returns nothing under `helm template`, so tools
+# that render without cluster access (Argo CD's default mode, `helm diff`) will
+# regenerate them and log every user out. Under GitOps, set these explicitly
+# from a secrets manager instead.
+secrets: {}
+
+# =============================================================================
+# Networking
+# =============================================================================
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Long-lived WebSockets: the nginx 60s defaults cut sessions off.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Must be >= chatto.video.maxUploadSize.
+    nginx.ingress.kubernetes.io/proxy-body-size: 500m
+  hosts:
+    - host: chat.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: chatto-tls
+      hosts:
+        - chat.example.com
+
+networkPolicy:
+  enabled: true
+  # The chart's built-in rules already admit traffic to the http and metrics
+  # ports from any source. These extra rules are what you would use after
+  # tightening those; they are additive, not restrictive.
+  extraIngress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: http
+          protocol: TCP
+
+# =============================================================================
+# Workload
+# =============================================================================
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+# The chart default hardcodes `app.kubernetes.io/name: chatto` here, which does
+# not match when nameOverride is set and collides across two releases in one
+# namespace. Spell the selector out, scoped to this release, and spread across
+# zones rather than just nodes.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: chatto
+        app.kubernetes.io/instance: chatto
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: chatto
+        app.kubernetes.io/instance: chatto
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  # Locking the root filesystem down requires writable mounts for the NATS CLI
+  # context the entrypoint writes and for ffmpeg scratch space.
+  readOnlyRootFilesystem: true
+
+extraVolumes:
+  - name: home
+    emptyDir: {}
+  - name: tmp
+    emptyDir:
+      sizeLimit: 2Gi
+
+extraVolumeMounts:
+  - name: home
+    mountPath: /home/chatto/.config
+  - name: tmp
+    mountPath: /tmp
+
+# =============================================================================
+# Observability
+# =============================================================================
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  # Match your Prometheus Operator's serviceMonitorSelector.
+  labels:
+    release: kube-prometheus-stack
+
+# =============================================================================
+# Bundled NATS JetStream
+# =============================================================================
+nats:
+  enabled: true
+  config:
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          size: 100Gi
+          storageClassName: gp3
+    cluster:
+      enabled: true
+      # Odd, for Raft quorum. Drives CHATTO_NATS_REPLICAS.
+      replicas: 3
+  container:
+    env:
+      # Must stay in sync with natsAuth.secretName. Subchart values cannot be
+      # templated, so this name is a literal and is NOT release-scoped: two
+      # Chatto releases in one namespace will fight over this Secret.
+      NATS_TOKEN:
+        valueFrom:
+          secretKeyRef:
+            name: chatto-nats-auth
+            key: token
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        memory: 4Gi
+
+# =============================================================================
+# Bundled LiveKit (voice/video)
+# =============================================================================
+# Real calls need UDP media reachable from clients. On most clusters that means
+# a LoadBalancer with a UDP port range, or hostNetwork, plus a TURN server for
+# clients behind restrictive NATs. Read the LiveKit deployment docs before
+# assuming this works out of the box.
+livekit:
+  enabled: true
+  replicaCount: 1
+  livekit:
+    port: 7880
+    log_level: info
+    rtc:
+      tcp_port: 7881
+      port_range_start: 50000
+      port_range_end: 60000
+      use_external_ip: true
+    # LiveKit's own copy of the API key/secret pair, which must match the
+    # apiKey/apiSecret in the chatto-livekit Secret above. Supply it at install
+    # time so it never lands in git:
+    #
+    #   --set livekit.livekit.keys.chatto=<the same apiSecret>
+    #
+    # Caveat: the livekit-server subchart renders this map into a ConfigMap in
+    # cleartext, not a Secret. If that is unacceptable, run LiveKit as a
+    # separate release you control and point chatto.livekit.url at it.
+    keys: {}
+    turn:
+      enabled: false
+  loadBalancer:
+    type: disable

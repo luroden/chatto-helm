@@ -1,0 +1,54 @@
+name: Release Chart
+
+# Publishes the chart as an OCI artifact to GHCR when a chart tag is pushed.
+# Tag format: chatto-v<chart version>, e.g. chatto-v0.1.0
+on:
+  push:
+    tags:
+      - "chatto-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Chart version to package (defaults to Chart.yaml)"
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CHART_DIR: charts/chatto
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to commit SHAs, not tags. This job holds `packages: write` and a
+      # registry login, so a mutable tag repointed by a compromised upstream
+      # could publish a backdoored chart under our name.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.16.3
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Resolve dependencies
+        run: helm dependency build "$CHART_DIR"
+
+      - name: Package chart
+        id: package
+        run: |
+          out=$(helm package "$CHART_DIR" --destination dist | awk '{print $NF}')
+          echo "path=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Push chart to GHCR
+        run: |
+          # Chart lands at oci://ghcr.io/<owner>/charts/chatto
+          repo="ghcr.io/${{ github.repository_owner }}/charts"
+          helm push "${{ steps.package.outputs.path }}" "oci://${repo}"
+          echo "Pushed to oci://${repo}/chatto" >> "$GITHUB_STEP_SUMMARY"

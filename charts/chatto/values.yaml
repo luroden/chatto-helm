@@ -1,0 +1,560 @@
+# Default values for the Chatto Helm chart.
+# See https://docs.chatto.run/reference/environment-variables/ for the full
+# configuration surface. Every setting below maps to a CHATTO_* env var.
+
+# -- Number of Chatto replicas. Chatto server processes are stateless (all
+# state lives in NATS JetStream), so you can scale this freely. Overridden by
+# autoscaling.enabled.
+replicaCount: 2
+
+image:
+  repository: ghcr.io/chattocorp/chatto
+  # -- Overrides the image tag. Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# =============================================================================
+# Chatto application configuration
+# Rendered into CHATTO_* environment variables. Non-sensitive values go into a
+# ConfigMap; sensitive values into a Secret. Both are consumed via envFrom.
+# =============================================================================
+chatto:
+  # -- Public external origin used for links and OAuth callbacks
+  # (CHATTO_WEBSERVER_URL). REQUIRED. Usually https://chat.example.com
+  url: ""
+
+  webserver:
+    # -- Container listen port (CHATTO_WEBSERVER_PORT)
+    port: 4000
+    # -- Comma-separated CORS origins (CHATTO_WEBSERVER_ALLOWED_ORIGINS)
+    allowedOrigins: ""
+    # -- Allowed OAuth callback origins (CHATTO_WEBSERVER_OAUTH_REDIRECT_ORIGINS)
+    oauthRedirectOrigins: ""
+    websocketCompression: true
+    requestLogging: false
+    tls:
+      # -- Built-in Let's Encrypt (autocert) TLS. Only sensible for a SINGLE
+      # replica exposed directly (service.type=LoadBalancer, service.port 443).
+      # For multi-replica HA, terminate TLS at an ingress/LB and leave this off.
+      enabled: false
+      domain: ""
+      email: ""
+      # -- Port serving ACME HTTP-01 challenges and the HTTPS redirect
+      # (CHATTO_WEBSERVER_TLS_HTTP_PORT). Upstream's default. The container runs
+      # as uid 1000 with all capabilities dropped, so binding a port below 1024
+      # only works if your cluster lowers net.ipv4.ip_unprivileged_port_start;
+      # otherwise raise this and map 80 -> it at the LoadBalancer.
+      httpPort: 80
+      # -- Where autocert caches issued certificates (default: .chatto/certs).
+      # Per-replica local state, which is why built-in TLS is single-replica
+      # only. Point at a writable path when readOnlyRootFilesystem is set.
+      cacheDir: ""
+
+  log:
+    # -- debug | info | warn | error
+    level: info
+    # -- auto | text | json | logfmt
+    format: json
+
+  # -- Local Operator API: a root-equivalent Unix socket (mode 0600) used by
+  # `chatto operator ...` inside the pod. Never served on the web listener.
+  #
+  # This is the ONLY way to create the first user without SMTP: browser sign-up
+  # sends a verification email and dead-ends at "Failed to send email" when
+  # chatto.smtp.enabled=false. With it on:
+  #
+  #   kubectl exec -it deploy/<release> -- \
+  #     /chatto operator user create --login admin \
+  #       --verified-email admin@example.com --password-stdin
+  #
+  # Anyone who can exec into the pod gains full control of the deployment, so
+  # prefer enabling it only long enough to bootstrap, then turning it back off.
+  operatorApi:
+    enabled: false
+    # -- Defaults to /tmp/chatto/operator.sock.
+    socketPath: ""
+
+  auth:
+    directRegistration: true
+    # tokenTTL: "90d"
+    # -- Registration / email-verification one-time codes. Only reachable when
+    # SMTP is configured, since the codes are delivered by email.
+    emailOtp:
+      throttlingEnabled: true
+      ttl: 15m
+      maxDeliveredCodes: 10
+      maxWrongAttempts: 5
+    # -- External login providers. Each entry becomes CHATTO_AUTH_PROVIDERS_<i>_*.
+    # Fields: id, type (oidc|github|gitlab|google|discord), label, clientId,
+    # clientSecret, issuerUrl, scopes, requestEmail, autoProvision, and
+    # providerOptions (a map rendered as ..._PROVIDER_OPTIONS_<KEY>).
+    # clientSecret values are stored in the chart Secret.
+    #
+    # Chatto also accepts a legacy single-provider CHATTO_AUTH_OIDC_* form. This
+    # chart does not expose it: `providers` supersedes it, and the two must not
+    # be combined.
+    providers: []
+
+  assets:
+    # -- nats | s3
+    storageBackend: nats
+    maxUploadSize: "25MB"
+    cache:
+      enabled: true
+      ttl: "7d"
+    s3:
+      endpoint: ""
+      bucket: ""
+      region: ""
+      pathPrefix: ""
+      useSSL: true
+      # -- auto | virtual | path
+      pathStyle: auto
+      accessKeyId: ""
+      secretAccessKey: ""
+      # -- Existing Secret with keys: accessKeyId, secretAccessKey
+      existingSecret: ""
+
+  smtp:
+    enabled: false
+    host: ""
+    port: 587
+    # -- mandatory | implicit | opportunistic
+    tls: mandatory
+    tlsServerName: ""
+    tlsSkipVerify: false
+    from: ""
+    username: ""
+    password: ""
+    # -- Existing Secret with keys: username, password
+    existingSecret: ""
+
+  push:
+    # -- Web Push notifications. Generate VAPID keys with:
+    # docker run --rm ghcr.io/chattocorp/chatto keys vapid  (or any VAPID tool)
+    enabled: false
+    vapidPublicKey: ""
+    vapidPrivateKey: ""
+    vapidSubject: ""
+    # -- Existing Secret with keys: vapidPublicKey, vapidPrivateKey
+    existingSecret: ""
+
+  video:
+    # -- Server-side video transcoding (ffmpeg is bundled in the image).
+    enabled: true
+    maxConcurrent: 2
+    maxUploadSize: "100MB"
+    # -- Override the bundled binaries. Blank => found on PATH.
+    ffmpegPath: ""
+    ffprobePath: ""
+    # -- Transcoding scratch space. Blank => the system temp dir. Set this when
+    # readOnlyRootFilesystem is on, and mount a writable volume at it.
+    tempDir: ""
+
+  livekit:
+    # -- Voice/video calls. Set url/apiKey/apiSecret to point at a LiveKit
+    # server. To bundle one, also enable the livekit subchart below and point
+    # url at its in-cluster service.
+    enabled: false
+    url: ""
+    apiKey: ""
+    apiSecret: ""
+    # -- Existing Secret with keys: apiKey, apiSecret
+    existingSecret: ""
+    # -- Prefix for deterministic LiveKit room names. Must be unique per Chatto
+    # server when several share one LiveKit cluster.
+    serverId: ""
+    webhook:
+      # -- Where LiveKit posts call events. Blank => {chatto.url}/webhooks/livekit.
+      url: ""
+      # -- Credentials LiveKit signs webhooks with. Blank => reuses the apiKey/
+      # apiSecret above. apiSecret is stored in the chart Secret. With
+      # livekit.existingSecret set, supply this via extraEnv instead.
+      apiKey: ""
+      apiSecret: ""
+
+  metrics:
+    # -- Prometheus metrics on a dedicated port. When enabled the chart binds
+    # the exporter to 0.0.0.0 so it is scrapable in-cluster.
+    enabled: false
+    port: 9090
+    path: /metrics
+    # -- Expose Go pprof under <path>/../debug/pprof/ on the metrics listener.
+    # That listener is reachable from anywhere in the cluster unless you set
+    # networkPolicy.enabled, so keep this off outside of debugging.
+    pprof: false
+
+  # -- The deployment-wide Prometheus exporter (CHATTO_EXPORTER_*) is not
+  # exposed as chart values: it is a second listener that would need its own
+  # container port, Service port and ServiceMonitor to be scrapable, and
+  # chatto.metrics above already covers per-process metrics. Set
+  # CHATTO_EXPORTER_* through `extra` below if you need it, and wire the port
+  # yourself. Likewise CHATTO_DIAGNOSTICS_* (local profiling).
+
+  # -- Comma-separated list of owner emails (CHATTO_OWNERS_EMAILS)
+  owners:
+    emails: ""
+
+  limits:
+    # -- Max user accounts (-1 unlimited, 0 disabled)
+    maxUsers: -1
+
+  # -- Free-form extra CHATTO_* entries merged into the config. Values are
+  # treated as non-sensitive (ConfigMap). Example: { WEBSERVER_REQUEST_LOGGING: "true" }
+  extra: {}
+
+# =============================================================================
+# Application secret keys
+# Leave blank to auto-generate stable random hex keys, persisted in the release
+# Secret and reused across upgrades (via lookup). Provide explicitly or via
+# secrets.existingSecret for GitOps / reproducible disaster recovery.
+# =============================================================================
+secrets:
+  cookieSigningSecret: ""
+  cookieEncryptionSecret: ""
+  coreSecretKey: ""
+  assetsSigningSecret: ""
+  # -- Bring-your-own Secret providing the sensitive CHATTO_* keys verbatim
+  # (CHATTO_WEBSERVER_COOKIE_SIGNING_SECRET, CHATTO_CORE_SECRET_KEY, ...).
+  # When set, the chart does not manage those keys.
+  existingSecret: ""
+
+# =============================================================================
+# NATS auth (shared token)
+# =============================================================================
+natsAuth:
+  # -- Name of the Secret holding the NATS token (key: token). Created by the
+  # chart when nats.enabled and existingSecret is empty.
+  # IMPORTANT: if you change this you MUST also change
+  # nats.container.env.NATS_TOKEN.valueFrom.secretKeyRef.name to match, and
+  # keep it unique per release within a namespace.
+  secretName: chatto-nats-auth
+  # -- Shared NATS token. Blank => auto-generated stable hex token.
+  token: ""
+  # -- Existing Secret with key: token
+  existingSecret: ""
+
+# =============================================================================
+# External NATS (used only when nats.enabled=false)
+# =============================================================================
+externalNats:
+  # -- Comma-separated server URLs for failover, e.g.
+  # nats://nats-0:4222,nats://nats-1:4222,nats://nats-2:4222
+  url: ""
+  # -- Stream replication factor (CHATTO_NATS_REPLICAS). Must match the cluster
+  # size and be odd (1, 3, or 5).
+  replicas: 3
+  # -- PEM-encoded CA certificate for verifying the NATS server's TLS cert
+  # (CHATTO_NATS_CLIENT_CA_CERT). When set, the client connects over TLS.
+  caCert: ""
+  auth:
+    # -- none | token | userpass | credentials | nkey
+    method: token
+    token: ""
+    username: ""
+    password: ""
+    # -- Contents of a NATS .creds file (method=credentials)
+    credentials: ""
+    # -- NKey seed (method=nkey). Stored in the chart Secret.
+    nkeySeed: ""
+    # -- Existing Secret. Keys used depend on method:
+    # token -> token; userpass -> username,password; credentials -> credentials;
+    # nkey -> nkeySeed
+    existingSecret: ""
+
+# =============================================================================
+# Networking
+# =============================================================================
+service:
+  # -- ClusterIP | LoadBalancer | NodePort. On a cluster with only a
+  # LoadBalancer controller (no ingress), set this to LoadBalancer.
+  type: ClusterIP
+  # -- Service port. Maps to the container http port.
+  port: 80
+  annotations: {}
+  # -- externalTrafficPolicy for LoadBalancer/NodePort (Local preserves client IP)
+  externalTrafficPolicy: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chat.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: chatto-tls
+  #    hosts:
+  #      - chat.example.com
+
+# -----------------------------------------------------------------------------
+# Gateway API — the alternative to `ingress` above. Enable one or the other.
+# Requires the Gateway API CRDs (gateway.networking.k8s.io/v1) and a controller.
+#
+# Two shapes are supported:
+#
+#   1. Route only. Chatto attaches to a Gateway that already exists, usually one
+#      shared cluster-wide and owned by the platform:
+#        httpRoute.enabled=true, httpRoute.parentRefs=[...]
+#
+#   2. Full stack. The chart also owns a Gateway, and — with cert-manager — a
+#      Certificate for its HTTPS listener:
+#        httpRoute.enabled=true, gateway.enabled=true,
+#        gateway.tls.certificate.enabled=true
+# -----------------------------------------------------------------------------
+httpRoute:
+  enabled: false
+  annotations: {}
+  # -- Hostnames to match. Defaults to the host in chatto.url.
+  hostnames: []
+  # -- Gateways to attach to. Required unless gateway.enabled=true, in which case
+  # the chart's own Gateway is used. Setting both attaches only to what is listed
+  # here. Entries are HTTPRoute parentRefs: name, and optionally namespace,
+  # sectionName, port.
+  parentRefs: []
+  #  - name: platform-gateway
+  #    namespace: gateway-system
+  #    sectionName: https-chat
+  # -- Request matches for the generated rule.
+  matches:
+    - path:
+        type: PathPrefix
+        value: /
+  # -- HTTPRoute filters, e.g. RequestHeaderModifier.
+  filters: []
+  # -- Chatto holds WebSockets open for the life of a session. Gateway API
+  # controllers apply a finite request timeout by default and would sever them;
+  # "0s" disables it. This is the Gateway API equivalent of the nginx
+  # proxy-read-timeout/proxy-send-timeout annotations the ingress examples set.
+  timeouts:
+    request: 0s
+    backendRequest: 0s
+
+gateway:
+  # -- Create a Gateway owned by this release. Leave false to attach to an
+  # existing one via httpRoute.parentRefs.
+  enabled: false
+  # -- GatewayClass to attach to (e.g. nginx, envoy, istio). Required.
+  gatewayClassName: ""
+  annotations: {}
+  # -- Hostnames served by the listeners. Defaults to the host in chatto.url.
+  # One listener is generated per hostname, per enabled protocol.
+  hostnames: []
+  # -- Which namespaces may attach routes to the listeners.
+  allowedRoutes:
+    namespaces:
+      from: Same
+  http:
+    # -- Plain HTTP listener. The HTTPRoute above attaches to every listener, so
+    # enabling this serves Chatto over cleartext HTTP as well as HTTPS. Some
+    # ACME HTTP-01 solvers also need port 80 on the Gateway they solve against.
+    enabled: false
+    port: 80
+  tls:
+    enabled: true
+    port: 443
+    # -- Secret holding the listener certificate. Defaults to <fullname>-tls.
+    # When certificate.enabled below, cert-manager writes this Secret.
+    secretName: ""
+    certificate:
+      # -- Create a cert-manager Certificate for secretName. Assumes cert-manager
+      # is installed and you already have the Issuer/ClusterIssuer named below;
+      # the chart does not create one.
+      enabled: false
+      annotations: {}
+      issuerRef:
+        name: ""
+        # -- ClusterIssuer | Issuer
+        kind: ClusterIssuer
+        group: cert-manager.io
+      # -- Optional cert lifetime overrides; cert-manager's defaults apply when
+      # left blank (90d / 30d for Let's Encrypt).
+      duration: ""
+      renewBefore: ""
+
+# =============================================================================
+# Workload
+# =============================================================================
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  # maxUnavailable: ""
+
+# Rolling update tuned for zero-downtime deploys (matches upstream example).
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+# Probes hit Chatto's /readyz (startup + readiness) and /healthz (liveness).
+startupProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 2
+  failureThreshold: 15
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  periodSeconds: 5
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 10
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  # The entrypoint writes a NATS CLI context under $HOME, so the root fs is not
+  # read-only by default. To enable readOnlyRootFilesystem, mount emptyDirs at
+  # /home/chatto/.config and /tmp via extraVolumes/extraVolumeMounts.
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+# Spread replicas across nodes by default for resilience.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: chatto
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Escape hatches
+extraEnv: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+initContainers: []
+
+# =============================================================================
+# Observability
+# =============================================================================
+serviceMonitor:
+  # -- Create a Prometheus Operator ServiceMonitor (requires chatto.metrics.enabled)
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+  relabelings: []
+  metricRelabelings: []
+
+networkPolicy:
+  # -- Restrict ingress to the http (and metrics) ports. Egress is left open.
+  enabled: false
+  # -- Extra ingress rules (e.g. allow your ingress controller namespace)
+  extraIngress: []
+
+# =============================================================================
+# Bundled NATS (dependency: nats/nats). Set nats.enabled=false to use your own.
+# The full upstream values are available; only opinionated defaults are set.
+# https://github.com/nats-io/k8s/tree/main/helm/charts/nats
+# =============================================================================
+nats:
+  enabled: true
+  config:
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          # Uses the cluster's default StorageClass unless storageClassName set.
+          size: 10Gi
+          # storageClassName: ""
+      memoryStore:
+        # REQUIRED. Chatto keeps presence (60s TTL) in a memory-backed
+        # MEMORY_CACHE KV bucket and creates it at startup. The NATS subchart
+        # leaves the memory store off by default (max_memory_store: 0), which
+        # makes that bucket fail with "insufficient memory resources available"
+        # and Chatto crash-loops. Keep maxSize comfortably below
+        # nats.container.resources.limits.memory.
+        enabled: true
+        maxSize: 256Mi
+    cluster:
+      # 3 nodes => JetStream Raft quorum, tolerates 1 failure. Keep odd.
+      # For single-node dev, set enabled=false and externalNats.replicas/
+      # CHATTO_NATS_REPLICAS to 1.
+      enabled: true
+      replicas: 3
+    merge:
+      # Rendered raw (<< >>) so nats-server expands $NATS_TOKEN from the env
+      # below at runtime, keeping the token out of the NATS ConfigMap.
+      authorization:
+        token: << $NATS_TOKEN >>
+  container:
+    env:
+      # MUST reference the Secret named by natsAuth.secretName above.
+      NATS_TOKEN:
+        valueFrom:
+          secretKeyRef:
+            name: chatto-nats-auth
+            key: token
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+  # Bundle the NATS monitoring/prometheus exporter sidecar when scraping.
+  natsBox:
+    enabled: false
+
+# =============================================================================
+# Bundled LiveKit (dependency: livekit/livekit-server, alias "livekit").
+# Disabled by default: real voice/video needs UDP media + TURN networking that
+# most clusters do not expose out of the box. See docs/ for guidance. When you
+# enable this, also set chatto.livekit.* to point Chatto at the service.
+# https://github.com/livekit/livekit-helm
+# =============================================================================
+livekit:
+  enabled: false
+  replicaCount: 1
+  # livekit:
+  #   keys:
+  #     mykey: mysecret
+  # loadBalancer:
+  #   type: disable

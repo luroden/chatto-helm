@@ -1,0 +1,61 @@
+# chart-testing (ct) case: exercises the Gateway API code paths — HTTPRoute,
+# a chart-owned Gateway, and the cert-manager Certificate for its listener.
+#
+# The workflow installs the Gateway API and cert-manager CRDs into the kind
+# cluster, but neither controller. So the API server validates these objects and
+# nothing reconciles them: the Gateway gets no address and the Certificate never
+# issues. That is enough to catch template regressions and schema violations,
+# which is the same bargain ingress-values.yaml makes with its unreconciled
+# Ingress. Nothing in the smoke test routes through the Gateway.
+chatto:
+  url: https://chat.ci.example.com
+  video:
+    enabled: false
+
+httpRoute:
+  enabled: true
+
+gateway:
+  enabled: true
+  gatewayClassName: nginx
+  # Cover the multi-hostname listener naming (https-0 / https-1), which a single
+  # hostname would not.
+  hostnames:
+    - chat.ci.example.com
+    - alt.ci.example.com
+  http:
+    enabled: true
+  tls:
+    enabled: true
+    certificate:
+      enabled: true
+      issuerRef:
+        # No such ClusterIssuer exists here, and no cert-manager controller runs
+        # to notice. The CRD schema still validates the reference.
+        name: ci-selfsigned
+        kind: ClusterIssuer
+
+replicaCount: 1
+podDisruptionBudget:
+  enabled: false
+
+nats:
+  config:
+    cluster:
+      enabled: false
+    jetstream:
+      fileStore:
+        pvc:
+          size: 1Gi
+  container:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

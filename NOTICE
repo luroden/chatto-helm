@@ -1,0 +1,23 @@
+chatto-helm
+Copyright the chatto-helm contributors.
+
+This Helm chart is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This is a community-maintained deployment chart for Chatto
+(https://github.com/chattocorp/chatto). It is NOT an official Chatto release
+artifact and is not endorsed by the Chatto project.
+
+The name and logo "Chatto" are used only nominatively to identify the software
+this chart deploys. Chatto's license does not grant permission to use Chatto
+names or logos as official branding for a fork or modified version; see
+https://github.com/chattocorp/chatto/blob/main/NOTICE.
+
+The Chatto server itself is distributed separately under AGPL-3.0-or-later with
+Apache-2.0 exceptions. This chart does not include or redistribute the Chatto
+source or binaries; it references the published container image
+(ghcr.io/chattocorp/chatto).
+
+This chart optionally deploys third-party software via their own upstream Helm
+charts, each under its own license:
+  - NATS (https://github.com/nats-io/k8s) — Apache-2.0
+  - LiveKit (https://github.com/livekit/livekit-helm) — Apache-2.0

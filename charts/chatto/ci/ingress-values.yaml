@@ -1,0 +1,61 @@
+# chart-testing (ct) case: exercises the ingress, autoscaling, metrics and
+# networkPolicy code paths that ct-values.yaml leaves off.
+#
+# Everything here must install on a bare kind cluster, so it deliberately avoids
+# anything needing a CRD (serviceMonitor), an external service (S3, SMTP,
+# LiveKit), or a real ingress controller — the Ingress object is created but
+# never reconciled, which is enough to catch template regressions.
+chatto:
+  url: https://chat.ci.example.com
+  metrics:
+    enabled: true
+  owners:
+    emails: admin@ci.example.com
+  # Transcoding is CPU-hungry; nothing in the smoke test uploads video.
+  video:
+    enabled: false
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: chat.ci.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+# kind's default CNI does not enforce NetworkPolicy, so this only asserts that
+# the object renders and is accepted by the API server.
+networkPolicy:
+  enabled: true
+
+# minAvailable=1 against a single autoscaled replica would block ct's teardown.
+podDisruptionBudget:
+  enabled: false
+
+nats:
+  config:
+    cluster:
+      enabled: false
+    jetstream:
+      fileStore:
+        pvc:
+          size: 1Gi
+  container:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
