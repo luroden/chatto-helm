@@ -13,25 +13,36 @@ Chatto is a single Go binary that keeps **all of its state in NATS JetStream**.
 Server processes are stateless, so the chart runs them as a scalable
 `Deployment` and provisions NATS as the durable, persistent backing store.
 
-```
-                 ┌───────────────────────────────┐
-   clients ────▶ │  Service (LoadBalancer /      │
-  (HTTP/WS)      │  Ingress / Gateway API)       │
-                 └───────────────┬───────────────┘
-                                 │
-                    ┌────────────▼────────────┐        stateless,
-                    │  Chatto Deployment      │◀──────  scale freely
-                    │  (N replicas, /readyz)  │
-                    └────────────┬────────────┘
-                                 │ NATS client (token auth)
-                    ┌────────────▼────────────┐        JetStream =
-                    │  NATS StatefulSet       │◀──────  primary data
-                    │  (3-node JetStream, PVC)│         store (Raft)
-                    └─────────────────────────┘
+```mermaid
+flowchart TD
+    clients["clients<br/>(HTTP/WS)"] --> svc["Service<br/>(LoadBalancer / Ingress / Gateway API)"]
+    svc --> chatto["Chatto Deployment<br/>(N replicas, /readyz)"]
+    chatto -- "NATS client (token auth)" --> nats["NATS StatefulSet<br/>(3-node JetStream, PVC)"]
+
+    chattoNote["stateless, scale freely"] -.- chatto
+    natsNote["JetStream = primary<br/>data store (Raft)"] -.- nats
+
+    subgraph optional ["Optional (all off by default)"]
+        direction LR
+        s3["S3<br/>asset storage"]
+        smtp["SMTP<br/>email"]
+        push["Web Push"]
+        livekit["LiveKit<br/>voice/video"]
+        metrics["Prometheus<br/>ServiceMonitor"]
+    end
+
+    chatto -.- s3
+    chatto -.- smtp
+    chatto -.- push
+    chatto -.- livekit
+    chatto -.- metrics
+
+    classDef note fill:none,stroke:none
+    class chattoNote,natsNote note
 ```
 
-Optional: **S3** asset storage, **SMTP** email, **Web Push**, **LiveKit**
-voice/video, and Prometheus **metrics**.
+`chatto.assets.storageBackend: s3` moves assets off JetStream; the rest are
+additive. See [Common configurations](#common-configurations).
 
 ## Prerequisites
 
