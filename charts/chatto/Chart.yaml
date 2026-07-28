@@ -66,6 +66,8 @@ annotations:
       description: "BREAKING: readOnlyRootFilesystem now defaults to true, with a writable /tmp mounted automatically. Requires Chatto 0.4.5+; set it to false if you pin an older image.tag. The chart refuses to render an unsafe combination rather than crash-looping."
     - kind: security
       description: Client IPs in audit records are no longer taken from forwarded headers unless the proxy is listed in chatto.webserver.trustedProxies
+    - kind: fixed
+      description: Auto-generated NATS tokens now start with a letter. nats-server re-parses the expanded token, so a hex token shaped like scientific notation ("480e5121...") was a startup parse error that broke roughly one fresh install in eight.
 
 dependencies:
   # NATS JetStream is Chatto's primary data store. Enabled by default so a

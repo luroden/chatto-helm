@@ -283,7 +283,14 @@ natsAuth:
   # nats.container.env.NATS_TOKEN.valueFrom.secretKeyRef.name to match, and
   # keep it unique per release within a namespace.
   secretName: chatto-nats-auth
-  # -- Shared NATS token. Blank => auto-generated stable hex token.
+  # -- Shared NATS token. Blank => auto-generated stable token (a sha256 hex
+  # string with a leading letter).
+  #
+  # If you set this yourself, START IT WITH A LETTER. nats-server receives the
+  # token unquoted in its config file and re-parses the value, so a token that
+  # looks like a number — all digits, or digits followed by `e` — is read as
+  # scientific notation and the server exits at startup. The chart fails the
+  # render on those two shapes rather than letting NATS crash-loop.
   token: ""
   # -- Existing Secret with key: token
   existingSecret: ""
