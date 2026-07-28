@@ -51,9 +51,20 @@ These facts drive the chart's design — do not regress them:
   (liveness) on the web server port. Probes must use these.
 - **Config is env-var driven** (`CHATTO_{SECTION}_{KEY}`), split into a
   ConfigMap (non-sensitive) and a Secret (sensitive), consumed via `envFrom`.
-- **The image runs as non-root (uid 1000)** and writes a NATS CLI context under
-  `$HOME`; do not default `readOnlyRootFilesystem: true` without mounting the
-  writable paths.
+- **The image runs as non-root (uid 1000).** Chatto 0.4.5 stopped materializing
+  a NATS CLI context under `$HOME` on every start, so `readOnlyRootFilesystem:
+  true` is the chart default. The process still needs a writable temp dir
+  (ffmpeg scratch, the Operator API socket), which the chart mounts as the
+  `tmpDir` emptyDir. `deployment.yaml` fails the render if that is disabled, or
+  if built-in TLS is on with its autocert cache still pointing at the read-only
+  root. Anything that pins `image.tag` below 0.4.5 must set
+  `securityContext.readOnlyRootFilesystem: false`.
+- **Forwarded headers are not trusted by default** (Chatto 0.4.8+). Client IPs
+  and `X-Forwarded-Host` are ignored unless the peer matches
+  `CHATTO_WEBSERVER_TRUSTED_PROXIES` (`chatto.webserver.trustedProxies`, IPs and
+  CIDRs only — Chatto rejects hostnames). This does not break WebSockets behind
+  a proxy that preserves the original `Host`; it does mean audit records show
+  the proxy's pod IP until an operator opts in.
 - **Chatto's WebSockets outlive any finite proxy timeout.** Ingress needs the
   nginx `proxy-read-timeout`/`proxy-send-timeout` annotations; Gateway API needs
   `httpRoute.timeouts` set to `0s`, which is the chart default. Do not

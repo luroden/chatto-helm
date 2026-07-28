@@ -1,3 +1,25 @@
+{{- /*
+readOnlyRootFilesystem became viable in Chatto 0.4.5 and is the chart default,
+but it still needs somewhere to write. Catch the two combinations that would
+otherwise crash-loop only once the pod is scheduled.
+*/}}
+{{- if .Values.securityContext.readOnlyRootFilesystem }}
+{{- /*
+Chatto below 0.4.5 writes a NATS CLI context under $HOME at every start, which a
+read-only root fails with `set -eu` before the server ever runs. Only checked
+for plain semver tags: "latest", digests and date tags are the operator's call.
+*/}}
+{{- $tag := trimPrefix "v" (default .Chart.AppVersion .Values.image.tag) }}
+{{- if and (regexMatch "^[0-9]+\\.[0-9]+\\.[0-9]+$" $tag) (semverCompare "<0.4.5" $tag) }}
+{{- fail (printf "image.tag %q predates Chatto 0.4.5, which is the first release that runs on a read-only root filesystem; the entrypoint would fail writing its NATS CLI context and the pod would crash-loop. Set securityContext.readOnlyRootFilesystem=false, or move to Chatto 0.4.5 or newer." $tag) }}
+{{- end }}
+{{- if not .Values.tmpDir.enabled }}
+{{- fail "securityContext.readOnlyRootFilesystem is true but tmpDir.enabled is false: Chatto needs a writable temp dir for video transcoding and the Operator API socket. Re-enable tmpDir, or mount your own writable volume and set securityContext.readOnlyRootFilesystem=false." }}
+{{- end }}
+{{- if and .Values.chatto.webserver.tls.enabled (not .Values.chatto.webserver.tls.cacheDir) }}
+{{- fail "chatto.webserver.tls.enabled requires a writable autocert cache, but securityContext.readOnlyRootFilesystem is true and chatto.webserver.tls.cacheDir is unset (it would default to .chatto/certs on the read-only root). Set securityContext.readOnlyRootFilesystem=false, or set tls.cacheDir to a persistent writable mount you supply via extraVolumes/extraVolumeMounts. Do not use tmpDir: certificates must survive a restart or you will hit Let's Encrypt rate limits." }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -167,6 +189,10 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.tmpDir.enabled }}
+            - name: tmp
+              mountPath: {{ .Values.tmpDir.mountPath }}
+            {{- end }}
             {{- if eq (include "chatto.natsAuthMethod" .) "credentials" }}
             - name: nats-creds
               mountPath: /etc/chatto/nats
@@ -176,6 +202,16 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
       volumes:
+        {{- if .Values.tmpDir.enabled }}
+        - name: tmp
+          emptyDir:
+            {{- with .Values.tmpDir.medium }}
+            medium: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.tmpDir.sizeLimit }}
+            sizeLimit: {{ . | quote }}
+            {{- end }}
+        {{- end }}
         {{- if eq (include "chatto.natsAuthMethod" .) "credentials" }}
         - name: nats-creds
           secret:

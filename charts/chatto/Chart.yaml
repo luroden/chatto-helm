@@ -5,11 +5,11 @@ type: application
 
 # This is the chart version. It is independent of Chatto's own version and is
 # bumped on every change to the chart itself (SemVer).
-version: 0.1.4
+version: 0.2.0
 
 # The default Chatto version this chart deploys. Kept in sync with the pinned
 # image tag in values.yaml (image.tag). Bump both together.
-appVersion: "0.4.3"
+appVersion: "0.4.18"
 
 home: https://chatto.run
 sources:
@@ -52,12 +52,20 @@ annotations:
   # this in sync with appVersion and values.yaml image.tag.
   artifacthub.io/images: |
     - name: chatto
-      image: ghcr.io/chattocorp/chatto:0.4.3
+      image: ghcr.io/chattocorp/chatto:0.4.18
 
   # Renders as the changelog for this chart version. Reset on every version bump.
   artifacthub.io/changes: |
     - kind: changed
-      description: Default Chatto version is now 0.4.3
+      description: Default Chatto version is now 0.4.18
+    - kind: added
+      description: chatto.webserver.trustedProxies (CHATTO_WEBSERVER_TRUSTED_PROXIES), new in Chatto 0.4.8
+    - kind: added
+      description: chatto.webserver.apiCompression.enabled and .minBytes, new in Chatto 0.4.10
+    - kind: changed
+      description: "BREAKING: readOnlyRootFilesystem now defaults to true, with a writable /tmp mounted automatically. Requires Chatto 0.4.5+; set it to false if you pin an older image.tag. The chart refuses to render an unsafe combination rather than crash-looping."
+    - kind: security
+      description: Client IPs in audit records are no longer taken from forwarded headers unless the proxy is listed in chatto.webserver.trustedProxies
 
 dependencies:
   # NATS JetStream is Chatto's primary data store. Enabled by default so a

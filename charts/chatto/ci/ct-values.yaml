@@ -22,6 +22,13 @@ nats:
         cpu: 25m
         memory: 64Mi
 
+# Covers the tmpfs branch of the tmpDir emptyDir. Video is off here so /tmp is
+# nearly idle; keep sizeLimit well under resources.limits.memory below, since a
+# Memory-medium emptyDir is charged to the container's memory limit.
+tmpDir:
+  medium: Memory
+  sizeLimit: 64Mi
+
 replicaCount: 1
 podDisruptionBudget:
   enabled: false

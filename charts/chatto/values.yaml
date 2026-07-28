@@ -41,6 +41,36 @@ chatto:
     oauthRedirectOrigins: ""
     websocketCompression: true
     requestLogging: false
+
+    # -- Reverse proxies Chatto may trust for `X-Forwarded-For`, `X-Real-IP` and
+    # `X-Forwarded-Host` (CHATTO_WEBSERVER_TRUSTED_PROXIES). Since Chatto 0.4.8
+    # the default is to trust nothing, so a direct client cannot spoof its
+    # source IP or the WebSocket same-origin check.
+    #
+    # Entries must be bare IP addresses or CIDRs — Chatto rejects hostnames at
+    # startup. The peer Chatto actually sees is your ingress controller's POD
+    # IP, not the client's and not the Service's, so list the pod CIDR of the
+    # namespace running the proxy:
+    #
+    #   trustedProxies:
+    #     - 10.42.0.0/16
+    #
+    # Leave empty unless you need real client IPs in audit records. Ingress
+    # controllers that preserve the original Host header (the common case) do
+    # not need this for WebSockets to work. Only list ranges you control: any
+    # workload inside them can then forge a client IP.
+    trustedProxies: []
+
+    # -- gzip for ConnectRPC API responses (Chatto 0.4.10+). Upstream defaults
+    # are enabled with a 1024-byte floor, which the chart passes through
+    # explicitly. Compression costs roughly 20-50 MiB of retained heap per
+    # replica for the compressor pool — turn it off to trade bandwidth for RAM
+    # on memory-constrained nodes. Compressed *requests* stay supported either
+    # way. (CHATTO_WEBSERVER_API_COMPRESSION{,_MIN_BYTES})
+    apiCompression:
+      enabled: true
+      # -- Smallest uncompressed response eligible for gzip, in bytes.
+      minBytes: 1024
     tls:
       # -- Built-in Let's Encrypt (autocert) TLS. Only sensible for a SINGLE
       # replica exposed directly (service.type=LoadBalancer, service.port 443).
@@ -54,9 +84,17 @@ chatto:
       # only works if your cluster lowers net.ipv4.ip_unprivileged_port_start;
       # otherwise raise this and map 80 -> it at the LoadBalancer.
       httpPort: 80
-      # -- Where autocert caches issued certificates (default: .chatto/certs).
-      # Per-replica local state, which is why built-in TLS is single-replica
-      # only. Point at a writable path when readOnlyRootFilesystem is set.
+      # -- Where autocert caches issued certificates (default: .chatto/certs,
+      # relative to the image's `/` workdir). Per-replica local state, which is
+      # why built-in TLS is single-replica only.
+      #
+      # The default securityContext.readOnlyRootFilesystem: true makes that path
+      # unwritable, so enabling TLS means either turning that off or pointing
+      # this at a writable mount you supply via extraVolumes/extraVolumeMounts.
+      # Do not point it inside tmpDir: an emptyDir is discarded on restart and
+      # re-requesting certificates will hit Let's Encrypt rate limits. Chatto
+      # 0.4.8+ also requires the cache to be owner-only and refuses to start on
+      # a symlinked or group-writable path.
       cacheDir: ""
 
   log:
@@ -159,8 +197,12 @@ chatto:
     # -- Override the bundled binaries. Blank => found on PATH.
     ffmpegPath: ""
     ffprobePath: ""
-    # -- Transcoding scratch space. Blank => the system temp dir. Set this when
-    # readOnlyRootFilesystem is on, and mount a writable volume at it.
+    # -- Transcoding scratch space. Blank => the system temp dir, which the
+    # chart already mounts writable via `tmpDir` below — so leave this alone
+    # unless you want transcoding on a different volume, in which case mount it
+    # yourself with extraVolumes/extraVolumeMounts. Whichever volume it lands
+    # on must hold maxConcurrent simultaneous transcodes of up to
+    # maxUploadSize each.
     tempDir: ""
 
   livekit:
@@ -453,13 +495,31 @@ podSecurityContext:
 
 securityContext:
   allowPrivilegeEscalation: false
-  # The entrypoint writes a NATS CLI context under $HOME, so the root fs is not
-  # read-only by default. To enable readOnlyRootFilesystem, mount emptyDirs at
-  # /home/chatto/.config and /tmp via extraVolumes/extraVolumeMounts.
-  readOnlyRootFilesystem: false
+  # Chatto 0.4.5 stopped materializing a NATS CLI context under $HOME at every
+  # container start, which is what previously forced a writable root fs. The
+  # only path the server still writes at runtime is the temp dir, which the
+  # chart mounts as an emptyDir (see `tmpDir` below).
+  #
+  # Set this back to false if you pin image.tag to a Chatto older than 0.4.5.
+  # It is also incompatible with chatto.webserver.tls.enabled unless you point
+  # tls.cacheDir at a writable mount — the chart fails the render if you do not.
+  readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL
+
+# -- Writable scratch space mounted at the container temp dir. Needed for
+# ffmpeg transcoding (chatto.video), the Operator API socket, and anything else
+# the process writes to /tmp — and required by readOnlyRootFilesystem above.
+# Size it above chatto.video.maxUploadSize when video is enabled; an emptyDir
+# that hits its sizeLimit gets the pod evicted.
+tmpDir:
+  enabled: true
+  mountPath: /tmp
+  sizeLimit: 1Gi
+  # -- Back the emptyDir with tmpfs (counts against the container memory limit)
+  # instead of node disk.
+  medium: ""
 
 # Spread replicas across nodes by default for resilience.
 topologySpreadConstraints:

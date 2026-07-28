@@ -32,6 +32,17 @@ sets both. Under Gateway API the same hazard lives in `httpRoute.timeouts`,
 which the chart defaults to `0s` (no timeout); the gateway examples spell it out
 rather than lean on the default.
 
+**Forwarded headers are opt-in.** Since Chatto 0.4.8 the server ignores
+`X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Host` unless the peer it sees
+matches `chatto.webserver.trustedProxies`. Nothing breaks when it is empty —
+every example here proxies with the original `Host` preserved, so WebSocket
+same-origin checks still pass — but audit records attribute actions to the
+ingress controller's pod IP. Only `full.yaml` opts in, because the value is
+cluster-specific: it must be the pod CIDR your proxy runs in, as an IP or CIDR
+(Chatto rejects hostnames, and the chart fails the render if you pass one).
+Widening it to a range that holds untrusted workloads lets those workloads forge
+client IPs.
+
 **Ingress or Gateway API, not both.** `ingress.enabled` and `httpRoute.enabled`
 each create an independent path to the Service. The chart does not stop you from
 turning on both — which is what a cutover needs — but steady state should have

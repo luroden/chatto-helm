@@ -29,7 +29,7 @@ image:
   repository: ghcr.io/chattocorp/chatto
   # Pin explicitly in production rather than inheriting the chart appVersion,
   # so a chart upgrade never moves the application version underneath you.
-  tag: "0.4.3"
+  tag: "0.4.18"
   pullPolicy: IfNotPresent
 
 chatto:
@@ -44,6 +44,23 @@ chatto:
     oauthRedirectOrigins: https://chat.example.com
     websocketCompression: true
     requestLogging: false
+
+    # Without this, every audit record attributes actions to the ingress
+    # controller's pod IP instead of the real client (Chatto 0.4.8+ ignores
+    # X-Forwarded-For from untrusted peers). Replace with YOUR cluster's pod
+    # CIDR — `kubectl cluster-info dump | grep -m1 cluster-cidr` — and make sure
+    # the ingress controller overwrites the forwarded headers rather than
+    # appending to client-supplied ones. Anything running inside this range can
+    # forge a client IP, so keep it as narrow as your CNI allows.
+    trustedProxies:
+      - 10.42.0.0/16
+
+    # Left at Chatto's defaults. The compressor pool costs ~20-50 MiB of heap
+    # per replica; set enabled: false if you are tuning for memory over
+    # bandwidth.
+    apiCompression:
+      enabled: true
+      minBytes: 1024
 
   log:
     level: info
@@ -231,22 +248,17 @@ securityContext:
   capabilities:
     drop:
       - ALL
-  # Locking the root filesystem down requires writable mounts for the NATS CLI
-  # context the entrypoint writes and for ffmpeg scratch space.
+  # The chart default since Chatto 0.4.5, which stopped writing a NATS CLI
+  # context under $HOME at startup. Spelled out here because it is the one
+  # setting worth double-checking after an upgrade.
   readOnlyRootFilesystem: true
 
-extraVolumes:
-  - name: home
-    emptyDir: {}
-  - name: tmp
-    emptyDir:
-      sizeLimit: 2Gi
-
-extraVolumeMounts:
-  - name: home
-    mountPath: /home/chatto/.config
-  - name: tmp
-    mountPath: /tmp
+# ffmpeg scratch space. This install raises chatto.video.maxUploadSize to
+# 500MB and allows 4 concurrent transcodes, so the chart's 1Gi default is too
+# small — an emptyDir that fills up gets the pod evicted.
+tmpDir:
+  enabled: true
+  sizeLimit: 4Gi
 
 # =============================================================================
 # Observability

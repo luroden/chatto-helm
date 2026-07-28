@@ -20,6 +20,20 @@ data:
   {{- with .Values.chatto.webserver.oauthRedirectOrigins }}
   CHATTO_WEBSERVER_OAUTH_REDIRECT_ORIGINS: {{ . | quote }}
   {{- end }}
+  {{- /*
+  Chatto validates every entry as an IP or CIDR and exits at startup on anything
+  else, so catch hostnames here where the message can point at the value.
+  */}}
+  {{- with .Values.chatto.webserver.trustedProxies }}
+  {{- range . }}
+  {{- if not (or (regexMatch "^[0-9]+(\\.[0-9]+){3}(/[0-9]+)?$" .) (regexMatch "^[0-9A-Fa-f:]*:[0-9A-Fa-f:.]*(/[0-9]+)?$" .)) }}
+  {{- fail (printf "chatto.webserver.trustedProxies: %q is not an IP address or CIDR. Chatto rejects hostnames; use your ingress controller's pod CIDR, e.g. 10.42.0.0/16" .) }}
+  {{- end }}
+  {{- end }}
+  CHATTO_WEBSERVER_TRUSTED_PROXIES: {{ join "," . | quote }}
+  {{- end }}
+  CHATTO_WEBSERVER_API_COMPRESSION: {{ .Values.chatto.webserver.apiCompression.enabled | quote }}
+  CHATTO_WEBSERVER_API_COMPRESSION_MIN_BYTES: {{ .Values.chatto.webserver.apiCompression.minBytes | quote }}
   {{- if .Values.chatto.webserver.tls.enabled }}
   CHATTO_WEBSERVER_TLS_ENABLED: "true"
   CHATTO_WEBSERVER_TLS_DOMAIN: {{ required "chatto.webserver.tls.domain is required when tls.enabled" .Values.chatto.webserver.tls.domain | quote }}

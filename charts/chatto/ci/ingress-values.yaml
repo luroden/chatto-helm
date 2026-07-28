@@ -14,6 +14,19 @@ chatto:
   # Transcoding is CPU-hungry; nothing in the smoke test uploads video.
   video:
     enabled: false
+  webserver:
+    # Covers CHATTO_WEBSERVER_TRUSTED_PROXIES rendering and the chart's
+    # IP/CIDR validation. kind's pod CIDR; nothing here forwards through a real
+    # proxy, so this only asserts Chatto accepts the value at startup rather
+    # than exiting on a parse error.
+    trustedProxies:
+      - 10.244.0.0/16
+      - fd00:10:244::/56
+    # Non-default values on both knobs, so a regression that swaps or drops
+    # them shows up.
+    apiCompression:
+      enabled: false
+      minBytes: 2048
 
 ingress:
   enabled: true

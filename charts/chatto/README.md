@@ -1,7 +1,7 @@
 # chatto
 
-![Version: 0.1.4](https://img.shields.io/badge/Version-0.1.4-informational?style=flat-square)
-![AppVersion: 0.4.3](https://img.shields.io/badge/AppVersion-0.4.3-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square)
+![AppVersion: 0.4.18](https://img.shields.io/badge/AppVersion-0.4.18-informational?style=flat-square)
 ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 A Helm chart for [Chatto](https://github.com/chattocorp/chatto), a self-hosted
@@ -59,9 +59,13 @@ Service (a LoadBalancer, Ingress, or Gateway API controller).
 | `chatto.push.enabled` | `false` | Web Push notifications. |
 | `chatto.livekit.enabled` | `false` | Voice/video via LiveKit. |
 | `chatto.metrics.enabled` | `false` | Prometheus metrics endpoint. |
+| `chatto.webserver.trustedProxies` | `[]` | IPs/CIDRs allowed to set `X-Forwarded-For`/`X-Real-IP`/`X-Forwarded-Host`. Set your ingress controller's pod CIDR to get real client IPs in audit records. |
+| `chatto.webserver.apiCompression.enabled` | `true` | gzip for ConnectRPC API responses. Disable to trade bandwidth for ~20-50 MiB of heap per replica. |
 | `serviceMonitor.enabled` | `false` | Create a Prometheus Operator ServiceMonitor. |
 | `autoscaling.enabled` | `false` | Horizontal Pod Autoscaler. |
 | `secrets.existingSecret` | `""` | Bring-your-own Secret for crypto keys. |
+| `securityContext.readOnlyRootFilesystem` | `true` | Requires Chatto 0.4.5+. Set `false` if you pin an older `image.tag`. |
+| `tmpDir.sizeLimit` | `1Gi` | Writable `/tmp` emptyDir. Raise it above `chatto.video.maxUploadSize`. |
 
 See [`values.yaml`](values.yaml) for the complete, commented configuration
 surface. Every option maps to a

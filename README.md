@@ -327,7 +327,43 @@ helm upgrade chatto oci://ghcr.io/luroden/charts/chatto -n chatto -f my-values.y
 ```
 
 To move to a new Chatto version, override the image tag (or upgrade to a chart
-release whose `appVersion` matches): `--set image.tag=0.4.3`.
+release whose `appVersion` matches): `--set image.tag=0.4.18`.
+
+### Upgrading to chart 0.2.0 (Chatto 0.4.18)
+
+No values were renamed or removed, so existing values files keep working. Two
+*defaults* changed. A stock install is fine; check these if you pin `image.tag`
+or run behind a proxy.
+
+**Breaking if you pin an old `image.tag`.**
+`securityContext.readOnlyRootFilesystem` now defaults to `true`, and the chart
+mounts a `tmpDir` emptyDir at `/tmp` for ffmpeg scratch space and the Operator
+API socket. Chatto only became read-only-root safe in **0.4.5** — before that
+the entrypoint wrote a NATS CLI context under `$HOME`, which fails on a
+read-only root and crash-loops the pod. If you pin `image.tag` below 0.4.5,
+either move the tag forward or set:
+
+```yaml
+securityContext:
+  readOnlyRootFilesystem: false
+```
+
+The chart checks this at render time and fails with an explanatory message
+rather than letting you deploy a pod that will not start, so an unsafe upgrade
+surfaces at `helm upgrade`, not in a CrashLoopBackOff. The check only applies to
+plain semver tags — `latest`, digests and date tags are left to you.
+
+Two follow-ons: raise `tmpDir.sizeLimit` (default `1Gi`) above
+`chatto.video.maxUploadSize` if you allow large uploads, since a full emptyDir
+gets the pod evicted; and if you previously mounted your own
+`/home/chatto/.config` and `/tmp` volumes to get a read-only root, you can drop
+them.
+- Chatto 0.4.8 stopped trusting `X-Forwarded-For`, `X-Real-IP` and
+  `X-Forwarded-Host` from unlisted peers. Audit records will attribute actions
+  to your ingress controller's pod IP until you set
+  `chatto.webserver.trustedProxies` to that controller's pod CIDR. WebSockets
+  are unaffected as long as your proxy preserves the original `Host` header,
+  which the ingress and Gateway examples in this repo do.
 
 ## Uninstalling
 
